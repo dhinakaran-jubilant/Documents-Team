@@ -1,13 +1,26 @@
+/**
+ * Project: Documents Team
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-30 18:41
+ * Description: Main Application component that handles user session management and auto-logout logic.
+ */
+
 import React, { useState, useEffect } from 'react';
 import Upload from './components/Upload';
 import Login from './components/Login';
 
+/**
+ * Main App component.
+ * Manages the authenticated user state and implements an inactivity timeout.
+ */
 function App() {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
+  // Sync user state with localStorage
   useEffect(() => {
     if (user) {
       localStorage.setItem('user', JSON.stringify(user));
@@ -16,11 +29,17 @@ function App() {
     }
   }, [user]);
 
+  /**
+   * Logs out the current user by clearing the user state.
+   */
   const handleLogout = () => {
     setUser(null);
   };
 
-  // Auto-logout after 1 hour of inactivity
+  /**
+   * Implements auto-logout after 1 hour of inactivity.
+   * Tracks various user interaction events to reset the timer.
+   */
   useEffect(() => {
     if (!user) return;
 

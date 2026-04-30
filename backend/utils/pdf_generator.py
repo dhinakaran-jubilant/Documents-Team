@@ -1,3 +1,11 @@
+"""
+Project: Documents Team
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-30 18:41
+Description: Utility for processing Excel data and generating PDF reports using ReportLab.
+"""
+
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, A4
@@ -7,6 +15,10 @@ import os
 import zipfile
 
 def process_excel_to_pdfs(file_stream, output_dir):
+    """
+    Reads an Excel file, validates required columns, and generates categorized PDF reports.
+    Returns a list of generated PDF file paths.
+    """
     try:
         df = pd.read_excel(file_stream)
     except Exception as e:
@@ -96,6 +108,9 @@ def process_excel_to_pdfs(file_stream, output_dir):
     )
 
     def generate_pdf(report_df, group_col, group_val, filename_prefix, secondary_cols=None):
+        """
+        Generates a single PDF report for a specific group (e.g., a specific Branch or Consultant).
+        """
         if report_df.empty:
             return
             
@@ -179,6 +194,9 @@ def process_excel_to_pdfs(file_stream, output_dir):
         col_widths = [fixed_widths.get(col, other_width) for col in columns]
 
         def create_table_from_df(df, display_cols, show_total=False):
+            """
+            Creates a ReportLab Table object from a DataFrame.
+            """
             if df.empty: return None
             data = []
             
@@ -361,6 +379,9 @@ def process_excel_to_pdfs(file_stream, output_dir):
     return pdf_files
 
 def create_zip_archive(pdf_files, output_path):
+    """
+    Compresses a list of PDF files into a single ZIP archive.
+    """
     with zipfile.ZipFile(output_path, 'w') as zipf:
         for file in pdf_files:
             # File structure is <output_dir>/<Category>/<Filename>

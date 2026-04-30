@@ -1,8 +1,20 @@
+"""
+Project: Documents Team
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-30 18:41
+Description: Database models for the Documents Team application.
+"""
+
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
 class User(db.Model):
+    """
+    User model representing a staff member or administrator.
+    Stores authentication details, role, and security question for password recovery.
+    """
     __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -15,4 +27,5 @@ class User(db.Model):
     security_answer = db.Column(db.String(255))
     
     def __repr__(self):
+        """Returns a string representation of the User object."""
         return f'<User {self.employee_code}>'

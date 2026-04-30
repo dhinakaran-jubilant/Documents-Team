@@ -1,3 +1,11 @@
+"""
+Project: Documents Team
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-30 18:41
+Description: Main Backend Flask application for handling file uploads, PDF generation, and user authentication.
+"""
+
 from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -52,6 +60,10 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    """
+    Endpoint for uploading Excel files and generating PDF reports.
+    Returns a ZIP file containing the generated PDFs.
+    """
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
         
@@ -76,8 +88,6 @@ def upload_file():
         create_zip_archive(pdf_paths, zip_path)
         
         # Send the zip file back
-        # We can't immediately remove the directory because send_file is asynchronous in returning the response.
-        # But for temp directories, OS handles cleanup eventually, or we could use an after_request callback.
         return send_file(
             zip_path,
             as_attachment=True,
@@ -92,6 +102,10 @@ def upload_file():
 
 @app.route('/api/login/', methods=['POST'])
 def login():
+    """
+    Handles user login by verifying employee code and password.
+    Returns user details including role and initial password status.
+    """
     try:
         data = request.json
         emp_code = data.get('employee_code', '').strip()
@@ -121,6 +135,9 @@ def login():
 
 @app.route('/api/users/initial-setup/', methods=['POST'])
 def initial_setup():
+    """
+    Handles the first-time password change and security question setup for new users.
+    """
     try:
         data = request.json
         emp_code = data.get('employee_code')
@@ -145,6 +162,9 @@ def initial_setup():
 
 @app.route('/api/forgot-password/request/', methods=['POST'])
 def forgot_password_request():
+    """
+    Retrieves the security question for a user who has forgotten their password.
+    """
     try:
         data = request.json
         emp_code = data.get('employee_code')
@@ -158,6 +178,9 @@ def forgot_password_request():
 
 @app.route('/api/forgot-password/reset/', methods=['POST'])
 def forgot_password_reset():
+    """
+    Resets the user's password after verifying their security question answer.
+    """
     try:
         data = request.json
         emp_code = data.get('employee_code')

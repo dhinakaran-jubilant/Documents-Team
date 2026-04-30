@@ -1,15 +1,21 @@
 /**
  * Project: Documents Team
- * Component: Login
  * Author: Dhinakaran Sekar
  * Email: dhinakaran.s@jubilantenterprises.in
- * Date: 2026-04-22 13:00:00
+ * Date: 2026-04-30 18:41
+ * Description: Login component that handles user authentication, initial password setup, and password recovery.
  */
+
 import React, { useState, useEffect } from 'react';
 import InitialSetupModal from './InitialSetupModal';
 import ForgotPasswordModal from './ForgotPasswordModal';
 import config from './config';
 
+/**
+ * Login component for user authentication.
+ * @param {Object} props - Component props.
+ * @param {Function} props.onLogin - Callback function when user successfully logs in.
+ */
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +27,7 @@ export default function Login({ onLogin }) {
   const [showForgot, setShowForgot] = useState(false);
   const [tempUser, setTempUser] = useState(null);
 
+  // Auto-clear error after 5 seconds
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
@@ -30,6 +37,10 @@ export default function Login({ onLogin }) {
     }
   }, [error]);
 
+  /**
+   * Handles the login form submission.
+   * Calls the backend login API and handles role-based redirection.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -47,6 +58,7 @@ export default function Login({ onLogin }) {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // If it's the first time logging in, show setup modal (unless admin)
         if (data.user.is_initial_password && data.user.role !== 'admin') {
           setTempUser(data.user);
           setShowSetup(true);
@@ -190,4 +202,3 @@ export default function Login({ onLogin }) {
     </div>
   );
 }
-

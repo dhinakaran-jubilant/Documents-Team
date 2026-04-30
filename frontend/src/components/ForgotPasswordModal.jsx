@@ -1,14 +1,20 @@
 /**
  * Project: Documents Team
- * Component: ForgotPasswordModal
  * Author: Dhinakaran Sekar
  * Email: dhinakaran.s@jubilantenterprises.in
- * Date: 2026-04-22 13:00:00
+ * Date: 2026-04-30 18:41
+ * Description: Modal component for recovering a forgotten password using security questions.
  */
+
 import React, { useState } from 'react';
 import SuccessModal from './SuccessModal';
 import config from './config';
 
+/**
+ * ForgotPasswordModal component.
+ * @param {Object} props - Component props.
+ * @param {Function} props.onClose - Callback function to close the modal.
+ */
 export default function ForgotPasswordModal({ onClose }) {
   const [step, setStep] = useState(1); // 1: Employee Code, 2: Security Question, 3: New Password
   const [employeeCode, setEmployeeCode] = useState('');
@@ -24,6 +30,9 @@ export default function ForgotPasswordModal({ onClose }) {
   const [userRole, setUserRole] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
 
+  /**
+   * Fetches the security question for the provided employee code.
+   */
   const handleFetchQuestion = async (e) => {
     e.preventDefault();
     setError('');
@@ -49,6 +58,9 @@ export default function ForgotPasswordModal({ onClose }) {
     }
   };
 
+  /**
+   * Transitions to the password reset step after user provides an answer.
+   */
   const handleVerifyAnswer = (e) => {
     e.preventDefault();
     if (!answer) {
@@ -58,9 +70,13 @@ export default function ForgotPasswordModal({ onClose }) {
     setStep(3);
   };
 
+  /**
+   * Resets the user's password after verifying the security answer.
+   */
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setError('');
+    // Admins don't need confirm password validation
     if (userRole !== 'admin' && newPassword !== confirmPassword) {
       setError('Passwords do not match.');
       return;

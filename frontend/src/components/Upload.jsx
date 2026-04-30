@@ -1,9 +1,23 @@
+/**
+ * Project: Documents Team
+ * Author: Dhinakaran Sekar
+ * Email: dhinakaran.s@jubilantenterprises.in
+ * Date: 2026-04-30 18:41
+ * Description: Upload component for selecting Excel files, processing them via the backend, and downloading generated PDF reports.
+ */
+
 import Layout from './Layout';
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import { DotLottiePlayer } from '@dotlottie/react-player';
 import config from './config';
 
+/**
+ * Upload component.
+ * @param {Object} props - Component props.
+ * @param {Object} props.user - Current authenticated user object.
+ * @param {Function} props.onLogout - Callback function for user logout.
+ */
 function Upload({ user, onLogout }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -14,6 +28,9 @@ function Upload({ user, onLogout }) {
   
   const inputRef = useRef(null);
 
+  /**
+   * Handles drag events for the file upload area.
+   */
   const handleDrag = function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -24,6 +41,9 @@ function Upload({ user, onLogout }) {
     }
   };
 
+  /**
+   * Handles file drop events.
+   */
   const handleDrop = function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -39,6 +59,9 @@ function Upload({ user, onLogout }) {
     }
   };
 
+  /**
+   * Handles file input change events.
+   */
   const handleChange = function (e) {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
@@ -52,15 +75,24 @@ function Upload({ user, onLogout }) {
     }
   };
 
+  /**
+   * Validates if a file is a valid Excel format.
+   */
   const isValidExcel = (f) => {
     return f.name.endsWith('.xlsx') || f.name.endsWith('.xls') ||
       ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"].includes(f.type);
   };
 
+  /**
+   * Triggers the file input click.
+   */
   const onButtonClick = () => {
     inputRef.current.click();
   };
 
+  /**
+   * Clears the selected file.
+   */
   const removeFile = (e) => {
     if (e && typeof e !== 'number') e.stopPropagation();
     setFile(null);
@@ -68,6 +100,10 @@ function Upload({ user, onLogout }) {
     if (inputRef.current) inputRef.current.value = '';
   };
 
+  /**
+   * Sends the selected file to the backend for processing.
+   * Downloads the resulting ZIP file on success.
+   */
   const handleSubmit = async () => {
     if (!file) return;
 

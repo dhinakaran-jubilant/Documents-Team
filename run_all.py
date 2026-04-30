@@ -1,3 +1,11 @@
+"""
+Project: Documents Team
+Author: Dhinakaran Sekar
+Email: dhinakaran.s@jubilantenterprises.in
+Date: 2026-04-30 18:41
+Description: Orchestration script to run both Flask backend and Vite frontend simultaneously.
+"""
+
 import subprocess
 import os
 import sys
@@ -5,6 +13,10 @@ import time
 import signal
 
 def run_app():
+    """
+    Launches the backend and frontend processes, monitors them, 
+    and handles graceful shutdown on keyboard interrupt.
+    """
     # Get the root directory
     root_dir = os.path.abspath(os.path.dirname(__file__))
     backend_dir = os.path.join(root_dir, 'backend')

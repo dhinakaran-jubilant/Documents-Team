@@ -1,14 +1,22 @@
 /**
  * Project: Documents Team
- * Component: InitialSetupModal
  * Author: Dhinakaran Sekar
  * Email: dhinakaran.s@jubilantenterprises.in
- * Date: 2026-04-22 13:00:00
+ * Date: 2026-04-30 18:41
+ * Description: Modal component for the first-time setup of user credentials and security questions.
  */
+
 import React, { useState } from 'react';
 import SuccessModal from './SuccessModal';
 import config from './config';
 
+/**
+ * InitialSetupModal component.
+ * @param {Object} props - Component props.
+ * @param {string} props.employeeCode - The employee code of the user.
+ * @param {string} props.userRole - The role of the user (e.g., 'admin', 'user').
+ * @param {Function} props.onClose - Callback function to close the modal.
+ */
 export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,10 +28,15 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  /**
+   * Handles the submission of the initial setup form.
+   * Validates passwords and security questions before calling the setup API.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
+    // Admins don't need confirm password validation
     if (userRole !== 'admin' && newPassword !== confirmPassword) {
       setError('Passwords do not match.');
       return;
