@@ -193,11 +193,11 @@ def process_excel_to_pdfs(file_stream, output_dir):
             
         col_widths = [fixed_widths.get(col, other_width) for col in columns]
 
-        def create_table_from_df(df, display_cols, show_total=False):
+        def create_table_from_df(df, display_cols, show_total=False, only_total=False, total_label="Total Amount", total_bg_color="#f0f0f0"):
             """
             Creates a ReportLab Table object from a DataFrame.
             """
-            if df.empty: return None
+            if df.empty and not only_total: return None
             data = []
             
             # Recalculate column widths for the display set
@@ -214,22 +214,24 @@ def process_excel_to_pdfs(file_stream, output_dir):
             local_col_widths = [fixed_widths.get(c, local_other_width) for c in display_cols]
 
             # Header row
-            data.append([Paragraph(str(col), header_style) for col in display_cols])
+            if not only_total:
+                data.append([Paragraph(str(col), header_style) for col in display_cols])
             
             # Data rows
-            for _, row in df.iterrows():
-                row_data = []
-                for col in display_cols:
-                    val = str(row[col]) if pd.notna(row[col]) else '-'
-                    if val == '-':
-                        row_data.append(Paragraph(val, cell_style_center))
-                    elif col in ['Dues', 'Due Amount', 'Last Paid Amount', 'EMI Amount']:
-                        row_data.append(Paragraph(val, cell_style_right))
-                    elif col in ['Tenure', "No. Of EMI's Received", "Balance EMI's"]:
-                        row_data.append(Paragraph(val, cell_style_center))
-                    else:
-                        row_data.append(Paragraph(val, cell_style))
-                data.append(row_data)
+            if not only_total:
+                for _, row in df.iterrows():
+                    row_data = []
+                    for col in display_cols:
+                        val = str(row[col]) if pd.notna(row[col]) else '-'
+                        if val == '-':
+                            row_data.append(Paragraph(val, cell_style_center))
+                        elif col in ['Dues', 'Due Amount', 'Last Paid Amount', 'EMI Amount']:
+                            row_data.append(Paragraph(val, cell_style_right))
+                        elif col in ['Tenure', "No. Of EMI's Received", "Balance EMI's"]:
+                            row_data.append(Paragraph(val, cell_style_center))
+                        else:
+                            row_data.append(Paragraph(val, cell_style))
+                    data.append(row_data)
             
             # Add Total row if requested
             if show_total and 'Due Amount' in display_cols:
@@ -243,47 +245,55 @@ def process_excel_to_pdfs(file_stream, output_dir):
                 due_col_idx = display_cols.index('Due Amount')
                 for i, col in enumerate(display_cols):
                     if i == 0: # Place label in the first of the merged columns
-                        total_row.append(Paragraph("Total Amount", cell_style_total_label))
+                        total_row.append(Paragraph(total_label, cell_style_total_label))
                     elif i == due_col_idx:
                         total_row.append(Paragraph(total_formatted, cell_style_total_red))
                     else:
                         total_row.append(Paragraph("", cell_style))
                 data.append(total_row)
 
-            t = Table(data, colWidths=local_col_widths, repeatRows=1)
+            t = Table(data, colWidths=local_col_widths, repeatRows=1 if not only_total else 0)
             
             # Base style
-            sc = [
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
-                ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
-                ('VALIGN', (0, 1), (-1, -1), 'TOP'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('TOPPADDING', (0, 0), (-1, 0), 8),
+            sc = []
+            if not only_total:
+                sc.extend([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ])
+            
+            sc.extend([
+                ('ALIGN', (0, 1 if not only_total else 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 1 if not only_total else 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7'))
-            ]
+            ])
             
             # Special formatting for total row if it exists
             if show_total:
-                sc.append(('LINEABOVE', (0, -1), (-1, -1), 1, colors.black))
-                sc.append(('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f0f0f0')))
-                sc.append(('SPAN', (0, -1), (min(3, local_num_cols-1), -1))) # Merge first 4 columns if possible
-                sc.append(('ALIGN', (0, -1), (-1, -1), 'CENTER'))
-                sc.append(('VALIGN', (0, -1), (-1, -1), 'MIDDLE'))
-                sc.append(('TOPPADDING', (0, -1), (-1, -1), 10))
-                sc.append(('BOTTOMPADDING', (0, -1), (-1, -1), 10))
+                total_row_idx = -1
+                due_col_idx = display_cols.index('Due Amount') if 'Due Amount' in display_cols else 1
+                sc.append(('LINEABOVE', (0, total_row_idx), (-1, total_row_idx), 1, colors.black))
+                sc.append(('BACKGROUND', (0, total_row_idx), (-1, total_row_idx), colors.HexColor(total_bg_color)))
+                sc.append(('SPAN', (0, total_row_idx), (max(0, due_col_idx - 1), total_row_idx))) # Merge columns before Due Amount
+                sc.append(('ALIGN', (0, total_row_idx), (-1, total_row_idx), 'CENTER'))
+                sc.append(('VALIGN', (0, total_row_idx), (-1, total_row_idx), 'MIDDLE'))
+                sc.append(('TOPPADDING', (0, total_row_idx), (-1, total_row_idx), 10))
+                sc.append(('BOTTOMPADDING', (0, total_row_idx), (-1, total_row_idx), 10))
 
             # Alternating row colors
-            row_count = len(data)
-            for i in range(1, row_count):
-                if show_total and i == row_count - 1:
-                    continue # Skip total row
-                bg_color = colors.HexColor('#ffffff') if i % 2 == 0 else colors.HexColor('#fbfbfb')
-                sc.append(('BACKGROUND', (0, i), (-1, i), bg_color))
+            if not only_total:
+                row_count = len(data)
+                for i in range(1, row_count):
+                    if show_total and i == row_count - 1:
+                        continue # Skip total row
+                    bg_color = colors.HexColor('#ffffff') if i % 2 == 0 else colors.HexColor('#fbfbfb')
+                    sc.append(('BACKGROUND', (0, i), (-1, i), bg_color))
             
             t.setStyle(TableStyle(sc))
             return t
@@ -326,6 +336,10 @@ def process_excel_to_pdfs(file_stream, output_dir):
                     sub_section.append(Paragraph(sub_header_text, sub_group_header_style))
                     sub_section.append(create_table_from_df(sub_group, table_cols, show_total=True))
                     elements.append(KeepTogether(sub_section))
+                
+                # Add Grand Total for splitted tables
+                elements.append(Spacer(1, 15))
+                elements.append(create_table_from_df(main_df, table_cols, show_total=True, only_total=True, total_label="Grand Total", total_bg_color="#d6eaf8"))
             else:
                 # Original single table behavior
                 elements.append(create_table_from_df(main_df, columns, show_total=True))

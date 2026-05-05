@@ -37,11 +37,20 @@ def run_app():
 
     print("--- Starting Documents Team Application ---")
 
+    # Set up environment variables to "activate" the virtual environment for the subprocess
+    env = os.environ.copy()
+    scripts_dir = os.path.dirname(python_exe)
+    env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
+    env["VIRTUAL_ENV"] = os.path.dirname(scripts_dir)
+    # Remove PYTHONHOME if it exists to avoid conflicts
+    env.pop("PYTHONHOME", None)
+
     # 1. Start Backend (Flask)
     print(f"[*] Starting Backend (Flask) from {backend_dir}...")
     backend_process = subprocess.Popen(
         [python_exe, 'app.py'],
-        cwd=backend_dir
+        cwd=backend_dir,
+        env=env
     )
 
     # Give backend a moment to initialize

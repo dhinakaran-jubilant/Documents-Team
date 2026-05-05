@@ -131,7 +131,12 @@ function Upload({ user, onLogout }) {
       link.parentNode.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      setSuccessMessage('Reports generated and downloaded successfully!');
+      const processTime = response.headers['x-process-time'] || 'unknown';
+      setSuccessMessage(
+        <>
+          Reports generated and downloaded successfully in <span className="font-bold text-blue-600 dark:text-blue-400">{processTime} seconds</span>!
+        </>
+      );
       setShowSuccessModal(true);
       setFile(null);
       if (inputRef.current) inputRef.current.value = '';
@@ -169,7 +174,7 @@ function Upload({ user, onLogout }) {
   return (
     <Layout user={user} onLogout={onLogout} activeTab="fin-report" breadcrumbs={['Fin Report']}>
         <main className="flex-1 bg-slate-50 dark:bg-[#101822] px-10 pb-8 transition-colors duration-300">
-                <div className="flex flex-col gap-10">
+                <div className="flex flex-col">
                     {/* Header Section */}
                     <div className="flex flex-col items-start text-left gap-2">
                         <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">Fin Report</h1>
@@ -186,7 +191,7 @@ function Upload({ user, onLogout }) {
                                 onDragLeave={handleDrag}
                                 onDragOver={handleDragOver}
                                 onDrop={handleDrop}
-                            >
+                                >
                                 <input
                                     type="file"
                                     ref={fileInputRef}
@@ -209,49 +214,49 @@ function Upload({ user, onLogout }) {
                                 </button>
                             </div>
 
-                            {/* Inline Error Message */}
-                            {errorMessage && (
-                                <div className="mt-6 bg-red-500/10 border border-red-500/20 text-red-500 px-6 py-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
-                                    <span className="material-symbols-outlined text-2xl">error_outline</span>
-                                    <span className="text-[12px] font-bold flex-1 tracking-widest">{errorMessage}</span>
+                        </div>
+                        {/* Inline Error Message */}
+                        {errorMessage && (
+                            <div className="mt-6 bg-red-500/10 border border-red-500/20 text-red-500 px-6 py-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-2">
+                                <span className="material-symbols-outlined text-2xl">error_outline</span>
+                                <span className="text-[12px] font-bold flex-1 tracking-widest">{errorMessage}</span>
+                                <button
+                                    onClick={dismissError}
+                                    className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-red-500/20 transition-colors"
+                                >
+                                    <span className="material-symbols-outlined text-xl">close</span>
+                                </button>
+                            </div>
+                        )}
+
+                    </div>
+                    {/* Selected Files List */}
+                    {selectedFiles.length > 0 && (
+                        <div className="mt-10 flex flex-col gap-4">
+                            <h5 className="font-black text-[11px] uppercase tracking-[0.2em] text-slate-500 ml-1">Selected File:</h5>
+                            {selectedFiles.map((f, index) => (
+                                <div key={index} className="flex items-center justify-between p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#111926]/50 transition-colors duration-300 animate-in zoom-in-95 duration-300">
+                                    <div className="flex items-center gap-4 overflow-hidden">
+                                        <div className="w-10 h-10 bg-blue-50 dark:bg-blue-600/10 rounded-lg flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-blue-500">description</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-slate-900 dark:text-white truncate transition-colors duration-300">{f.name}</span>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                                {(f.size / 1024 / 1024).toFixed(2)} MB
+                                            </span>
+                                        </div>
+                                    </div>
                                     <button
-                                        onClick={dismissError}
-                                        className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-red-500/20 transition-colors"
+                                        onClick={() => removeFile()}
+                                        className="flex items-center justify-center rounded-xl h-10 w-10 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all cursor-pointer"
                                     >
-                                        <span className="material-symbols-outlined text-xl">close</span>
+                                        <span className="material-symbols-outlined">delete</span>
                                     </button>
                                 </div>
-                            )}
-
-                            {/* Selected Files List */}
-                            {selectedFiles.length > 0 && (
-                                <div className="mt-10 flex flex-col gap-4">
-                                    <h5 className="font-black text-[11px] uppercase tracking-[0.2em] text-slate-500 ml-1">Selected File:</h5>
-                                    {selectedFiles.map((f, index) => (
-                                        <div key={index} className="flex items-center justify-between p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#111926]/50 transition-colors duration-300 animate-in zoom-in-95 duration-300">
-                                            <div className="flex items-center gap-4 overflow-hidden">
-                                                <div className="w-10 h-10 bg-blue-50 dark:bg-blue-600/10 rounded-lg flex items-center justify-center">
-                                                    <span className="material-symbols-outlined text-blue-500">description</span>
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-slate-900 dark:text-white truncate transition-colors duration-300">{f.name}</span>
-                                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                                        {(f.size / 1024 / 1024).toFixed(2)} MB
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => removeFile()}
-                                                className="flex items-center justify-center rounded-xl h-10 w-10 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined">delete</span>
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            ))}
                         </div>
-                    </div>
+                    )}
 
                     {/* Action Buttons */}
                     <div className="flex justify-end gap-5 mt-4">

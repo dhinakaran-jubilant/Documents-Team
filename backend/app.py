@@ -56,7 +56,7 @@ with app.app_context():
         print("Updated existing admin user password to: Admin@123")
 
 # Enable CORS for React frontend (default dev port 5173 for vite)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "*", "expose_headers": ["X-Process-Time"]}})
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -76,6 +76,8 @@ def upload_file():
 
     temp_dir = tempfile.mkdtemp()
     
+    import time
+    start_time = time.time()
     try:
         # Process the excel file and get list of paths
         pdf_paths = process_excel_to_pdfs(file, temp_dir)
@@ -87,13 +89,17 @@ def upload_file():
         zip_path = os.path.join(temp_dir, "financial_reports.zip")
         create_zip_archive(pdf_paths, zip_path)
         
+        duration = time.time() - start_time
+        
         # Send the zip file back
-        return send_file(
+        response = send_file(
             zip_path,
             as_attachment=True,
             download_name="financial_reports.zip",
             mimetype="application/zip"
         )
+        response.headers['X-Process-Time'] = f"{duration:.2f}"
+        return response
     except Exception as e:
         shutil.rmtree(temp_dir, ignore_errors=True)
         return jsonify({"error": str(e)}), 500
