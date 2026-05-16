@@ -114,28 +114,9 @@ def process_excel_to_pdfs(file_stream, output_dir):
         if report_df.empty:
             return
             
-        # Sort by Branch (alphabetical) and Agr. No. (numerical)
-        sort_cols = []
-        temp_cols = []
-        
-        if 'Branch' in report_df.columns:
-            sort_cols.append('Branch')
-            
-        if 'Consultant' in report_df.columns:
-            sort_cols.append('Consultant')
-            
-        if 'Agr. No.' in report_df.columns:
-            # Create a numeric helper for Agreement Number to ensure 10 comes after 2
-            report_df['_agr_numeric'] = pd.to_numeric(report_df['Agr. No.'], errors='coerce').fillna(0)
-            sort_cols.append('_agr_numeric')
-            temp_cols.append('_agr_numeric')
-            
-        if sort_cols:
-            report_df.sort_values(by=sort_cols, ascending=True, inplace=True)
-            
-        # Clean up temporary sorting columns
-        if temp_cols:
-            report_df.drop(columns=temp_cols, inplace=True)
+        # Sort by Customer Name (alphabetical)
+        if 'Customer Name' in report_df.columns:
+            report_df.sort_values(by='Customer Name', ascending=True, inplace=True)
             
         # Remove the grouping column
         if group_col in report_df.columns:
