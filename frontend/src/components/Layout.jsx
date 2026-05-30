@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import logoImage from '../assets/logo.png';
 
-const Layout = ({ children, user, onLogout, activeTab = 'contra-match', breadcrumbs = [] }) => {
+const Layout = ({ children, user, onLogout, onTabChange, onTabClick, activeTab = 'fin-report', breadcrumbs = [] }) => {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isDark, setIsDark] = useState(() => {
-        return localStorage.getItem('isDark') === 'true' || true; // Default to dark for premium feel
+        return localStorage.getItem('isDark') !== 'false'; // Default to dark for premium feel
     });
 
     useEffect(() => {
@@ -54,14 +54,50 @@ const Layout = ({ children, user, onLogout, activeTab = 'contra-match', breadcru
                 {/* Sidebar */}
                 <aside className="w-[260px] border-r border-slate-200 dark:border-slate-800/50 bg-white dark:bg-[#0f172b] flex flex-col shrink-0 transition-colors duration-300">
                     <div className="flex flex-col gap-2 p-4">
-                        <div
-                            className={`flex items-center gap-3 px-6 h-14 rounded-2xl transition-all cursor-pointer ${activeTab === 'fin-report'
-                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                                : 'text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'}`}
-                        >
-                            <span className="material-symbols-outlined">table_view</span>
-                            <span className="text-[12px] font-black uppercase tracking-[0.2em]">Fin Report</span>
-                        </div>
+                        {(user?.role === 'admin' || !user?.accessed_menus || user.accessed_menus.includes('fin-report')) && (
+                            <div
+                                onClick={() => {
+                                    onTabChange && onTabChange('fin-report');
+                                    onTabClick && onTabClick('fin-report');
+                                }}
+                                className={`flex items-center gap-3 px-6 h-14 rounded-2xl transition-all cursor-pointer ${activeTab === 'fin-report'
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                    : 'bg-slate-100/50 dark:bg-slate-800/20 text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'}`}
+                            >
+                                <span className="material-symbols-outlined">table_view</span>
+                                <span className="text-[12px] font-black uppercase tracking-[0.2em]">Fin Report</span>
+                            </div>
+                        )}
+
+                        {(user?.role === 'admin' || !user?.accessed_menus || user.accessed_menus.includes('documat')) && (
+                            <div
+                                onClick={() => {
+                                    onTabChange && onTabChange('documat');
+                                    onTabClick && onTabClick('documat');
+                                }}
+                                className={`flex items-center gap-3 px-6 h-14 rounded-2xl transition-all cursor-pointer ${activeTab === 'documat'
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                    : 'bg-slate-100/50 dark:bg-slate-800/20 text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'}`}
+                            >
+                                <span className="material-symbols-outlined">description</span>
+                                <span className="text-[12px] font-black uppercase tracking-[0.2em]">Documat</span>
+                            </div>
+                        )}
+
+                        {user?.role === 'admin' && (
+                            <div
+                                onClick={() => {
+                                    onTabChange && onTabChange('users');
+                                    onTabClick && onTabClick('users');
+                                }}
+                                className={`flex items-center gap-3 px-6 h-14 rounded-2xl transition-all cursor-pointer ${activeTab === 'users'
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                    : 'bg-slate-100/50 dark:bg-slate-800/20 text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'}`}
+                            >
+                                <span className="material-symbols-outlined">group</span>
+                                <span className="text-[12px] font-black uppercase tracking-[0.2em]">Users</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="mt-auto p-4 border-t border-slate-200 dark:border-slate-800/50 bg-white dark:bg-[#0f172b] transition-colors duration-300">
@@ -86,22 +122,7 @@ const Layout = ({ children, user, onLogout, activeTab = 'contra-match', breadcru
 
                 {/* Content Area */}
                 <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-50 dark:bg-[#101822] transition-colors duration-300">
-                    <div className="flex-1 overflow-y-auto relative scrollbar-slim">
-                        {/* Breadcrumbs */}
-                        <div className="h-[60px] flex items-center px-10 shrink-0">
-                            <div className="flex items-center gap-1 text-blue-500 font-bold text-[12px] uppercase tracking-widest">
-                                <span>Home</span>
-                                {breadcrumbs.map((crumb, idx) => (
-                                    <React.Fragment key={idx}>
-                                        <span className="material-symbols-outlined text-sm opacity-50 text-slate-500">chevron_right</span>
-                                        <span className={idx === breadcrumbs.length - 1 ? 'text-slate-400' : 'hover:text-blue-400 cursor-pointer'}>
-                                            {crumb}
-                                        </span>
-                                    </React.Fragment>
-                                ))}
-                            </div>
-                        </div>
-
+                    <div className={`flex-1 relative ${activeTab === 'users' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto scrollbar-slim'}`}>
                         {children}
                     </div>
                 </div>

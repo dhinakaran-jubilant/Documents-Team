@@ -114,7 +114,7 @@ export default function Login({ onLogin }) {
                 <button 
                   type="button"
                   onClick={() => setShowForgot(true)}
-                  className="text-blue-600 text-[11px] font-bold hover:text-blue-700 transition-colors"
+                  className="text-blue-600 text-[11px] font-bold hover:text-blue-700 transition-colors cursor-pointer"
                 >
                   Forgot Password?
                 </button>
@@ -134,7 +134,7 @@ export default function Login({ onLogin }) {
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[20px]">
                     {showPassword ? 'visibility_off' : 'visibility'}
@@ -161,7 +161,7 @@ export default function Login({ onLogin }) {
             <button
               type="submit"
               disabled={loading}
-              className={`w-full bg-blue-600 text-white font-bold h-12 rounded-xl transition-all shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 mt-4 active:scale-[0.98] ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+              className={`w-full bg-blue-600 text-white font-bold h-12 rounded-xl transition-all shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 mt-4 active:scale-[0.98] cursor-pointer ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'}`}
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

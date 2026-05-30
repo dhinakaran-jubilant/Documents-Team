@@ -27,6 +27,13 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showQuestions, setShowQuestions] = useState(false);
+  const questions = [
+    "What is your mother's maiden name?",
+    "What was the name of your first pet?",
+    "What city were you born in?",
+    "What was the name of your elementary school?"
+  ];
 
   /**
    * Handles the submission of the initial setup form.
@@ -90,12 +97,12 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
-      <div className="w-full max-w-md bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+      <div className="w-full max-w-md bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
         <div className="p-10">
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100">Confirm  Password</h2>
-              <p className="text-slate-500 dark:text-slate-400 text-xs mt-2 font-bold uppercase tracking-wider">Set your permanent credentials</p>
+              <h2 className="text-3xl font-black text-slate-900">Confirm  Password</h2>
+              <p className="text-slate-500 text-xs mt-2 font-bold uppercase tracking-wider">Set your permanent credentials</p>
             </div>
           </div>
 
@@ -104,20 +111,20 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
               {/* Password Section */}
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">New Password <span className="text-rose-500">*</span></label>
+                  <label className="text-[12px] font-black text-slate-700 uppercase tracking-[0.1em] ml-1">New Password <span className="text-rose-500">*</span></label>
                   <div className="relative">
                     <input
                       type={showNewPassword ? 'text' : 'password'}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors z-10 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-slate-400 text-lg select-none">
                         {showNewPassword ? 'visibility_off' : 'visibility'}
@@ -127,20 +134,20 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
                 </div>
                 {userRole !== 'admin' && (
                   <div className="space-y-2">
-                    <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">Confirm Password <span className="text-rose-500">*</span></label>
+                    <label className="text-[12px] font-black text-slate-700 uppercase tracking-[0.1em] ml-1">Confirm Password <span className="text-rose-500">*</span></label>
                     <div className="relative">
                       <input
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                        className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
                         required
                       />
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword((prev) => !prev)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors z-10"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 transition-colors z-10 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-slate-400 text-lg select-none">
                           {showConfirmPassword ? 'visibility_off' : 'visibility'}
@@ -152,30 +159,54 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
               </div>
 
               {/* Security Questions Section */}
-              <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <div className="space-y-4 pt-6 border-t border-slate-400">
                 <div className="space-y-2">
-                  <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">Security Question <span className="text-rose-500">*</span></label>
-                  <select
-                    value={q1}
-                    onChange={(e) => setQ1(e.target.value)}
-                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
-                    required
-                  >
-                    <option value="">Select a question</option>
-                    <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
-                    <option value="What was the name of your first pet?">What was the name of your first pet?</option>
-                    <option value="What city were you born in?">What city were you born in?</option>
-                    <option value="What was the name of your elementary school?">What was the name of your elementary school?</option>
-                  </select>
+                  <label className="text-[12px] font-black text-slate-700 uppercase tracking-[0.1em] ml-1">Security Question <span className="text-rose-500">*</span></label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowQuestions(prev => !prev)}
+                      className="w-full h-12 pl-4 pr-12 rounded-2xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all flex items-center justify-between cursor-pointer text-left"
+                    >
+                      <span className={q1 ? "text-slate-900" : "text-slate-400"}>
+                        {q1 || "Select a question"}
+                      </span>
+                    </button>
+                    <span className="material-symbols-outlined absolute right-[21px] top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-lg">
+                      keyboard_arrow_down
+                    </span>
+                    
+                    {showQuestions && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowQuestions(false)} />
+                        <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="py-1.5 divide-y divide-slate-50">
+                            {questions.map((q) => (
+                              <div
+                                key={q}
+                                onClick={() => {
+                                  setQ1(q);
+                                  setShowQuestions(false);
+                                }}
+                                className={`px-5 py-3 text-sm text-slate-800 hover:bg-slate-50 cursor-pointer font-medium transition-colors ${q1 === q ? 'bg-blue-50/50 text-blue-600 font-bold' : ''}`}
+                              >
+                                {q}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[12px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-[0.1em] ml-1">Your Secret Answer <span className="text-rose-500">*</span></label>
+                  <label className="text-[12px] font-black text-slate-700 uppercase tracking-[0.1em] ml-1">Your Secret Answer <span className="text-rose-500">*</span></label>
                   <input
                     type="text"
                     value={a1}
                     onChange={(e) => setA1(e.target.value)}
                     placeholder="Recovery answer"
-                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm font-medium dark:text-white focus:ring-4 focus:ring-primary/10 focus:border-primary focus:outline-none transition-all"
+                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
                     required
                   />
                 </div>
@@ -183,7 +214,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
             </div>
 
             {error && (
-              <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/20 text-red-500 text-[11px] font-bold border border-red-100 dark:border-red-900/30 flex items-center gap-2">
+              <div className="p-4 rounded-2xl bg-red-50 text-red-500 text-[11px] font-bold border border-red-100 flex items-center gap-2">
                 <span className="material-symbols-outlined text-lg">error</span>
                 {error}
               </div>
@@ -192,7 +223,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black h-14 rounded-2xl transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-widest text-sm"
+              className="w-full bg-slate-900 text-white font-black h-14 rounded-2xl transition-all shadow-xl shadow-slate-900/10 flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-widest text-sm cursor-pointer"
             >
               {loading ? (
                 'Processing...'

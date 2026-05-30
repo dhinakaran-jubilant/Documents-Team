@@ -8,7 +8,9 @@
 
 import React, { useState, useEffect } from 'react';
 import Upload from './components/Upload';
+import Documat from './components/Documat';
 import Login from './components/Login';
+import Users from './components/Users';
 
 /**
  * Main App component.
@@ -19,6 +21,22 @@ function App() {
     const savedUser = localStorage.getItem('user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
+
+  const [activeTab, setActiveTab] = useState('fin-report');
+  
+  // Sync document theme: forces light mode on Login screen, applies dark/light on dashboard
+  useEffect(() => {
+    if (user) {
+      const isDark = localStorage.getItem('isDark') !== 'false';
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [user]);
 
   // Sync user state with localStorage
   useEffect(() => {
@@ -75,7 +93,15 @@ function App() {
     return <Login onLogin={setUser} />;
   }
 
-  return <Upload user={user} onLogout={handleLogout} />;
+  if (activeTab === 'documat') {
+    return <Documat user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+  }
+
+  if (activeTab === 'users') {
+    return <Users user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+  }
+
+  return <Upload user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
 }
 
 export default App;

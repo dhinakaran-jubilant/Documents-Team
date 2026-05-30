@@ -18,7 +18,7 @@ import config from './config';
  * @param {Object} props.user - Current authenticated user object.
  * @param {Function} props.onLogout - Callback function for user logout.
  */
-function Upload({ user, onLogout }) {
+function Upload({ user, onLogout, onTabChange }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
@@ -172,11 +172,11 @@ function Upload({ user, onLogout }) {
   const dismissError = () => setStatus(null);
 
   return (
-    <Layout user={user} onLogout={onLogout} activeTab="fin-report" breadcrumbs={['Fin Report']}>
-        <main className="flex-1 bg-slate-50 dark:bg-[#101822] px-10 pb-8 transition-colors duration-300">
+    <Layout user={user} onLogout={onLogout} onTabChange={onTabChange} activeTab="fin-report">
+        <main className="flex-1 bg-slate-50 dark:bg-[#101822] px-10 pt-10 pb-8 transition-colors duration-300">
                 <div className="flex flex-col">
                     {/* Header Section */}
-                    <div className="flex flex-col items-start text-left gap-2">
+                    <div className="flex flex-col items-start text-left gap-2 mb-8">
                         <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">Fin Report</h1>
                         <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed transition-colors duration-300">Upload Excel files containing financial collection and dues data. The system automatically processes the records to generate structured PDF reports grouped by Branch, Consultant, and Collection Executive, complete with dedicated TDS listings and total amount calculations.</p>
                     </div>
@@ -259,7 +259,7 @@ function Upload({ user, onLogout }) {
                     )}
 
                     {/* Action Buttons */}
-                    <div className="flex justify-end gap-5 mt-4">
+                    <div className="flex justify-end gap-5 mt-8">
                         <button
                             onClick={() => removeFile()}
                             className="flex items-center gap-3 px-8 py-3.5 rounded-xl border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-500 font-bold uppercase tracking-widest text-[11px] hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-all cursor-pointer"
@@ -288,7 +288,7 @@ function Upload({ user, onLogout }) {
                 </div>
 
                 {/* Footer */}
-                <footer className="mt-15 pt-6 border-t border-slate-200 dark:border-slate-800/50 text-center text-[12px] font-bold tracking-[0.1em] text-slate-500">
+                <footer className="mt-12 pt-6 border-t border-slate-200 dark:border-slate-800/50 text-center text-[12px] font-bold tracking-[0.1em] text-slate-500">
                     <p>
                         All rights reserved &copy; 2026 @ Jubilant Capital. Designed and Developed by{' '}
                         <a href="mailto:dhinakaran.s@jubilantenterprises.in" className="text-blue-500 hover:underline">

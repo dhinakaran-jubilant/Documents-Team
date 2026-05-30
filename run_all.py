@@ -69,7 +69,7 @@ def run_app():
         backend_process.terminate()
         return
 
-    print("\n[✔] Both processes are running!")
+    print("\n[OK] Both processes are running!")
     print("[!] Press Ctrl+C to shut down both servers.\n")
 
     try:
@@ -98,7 +98,7 @@ def run_app():
             backend_process.kill()
             frontend_process.kill()
             
-        print("[✔] Shutdown complete.")
+        print("[OK] Shutdown complete.")
 
 if __name__ == "__main__":
     run_app()
