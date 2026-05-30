@@ -31,3 +31,21 @@ class User(db.Model):
     def __repr__(self):
         """Returns a string representation of the User object."""
         return f'<User {self.employee_code}>'
+
+
+class CompanyAddress(db.Model):
+    """
+    CompanyAddress model storing lender/company name, PAN number, and registered address.
+    Seeded from company_address_data.xlsx on application startup.
+    """
+    __tablename__ = 'company_addresses'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    pan_number = db.Column(db.String(10))
+    address = db.Column(db.Text)
+
+    def __repr__(self):
+        """Returns a string representation of the CompanyAddress object."""
+        return f'<CompanyAddress {self.name}>'
+

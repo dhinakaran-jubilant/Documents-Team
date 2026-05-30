@@ -10,7 +10,7 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User
+from models import db, User, CompanyAddress
 import os
 import tempfile
 import atexit
@@ -39,6 +39,35 @@ db.init_app(app)
 # Initialize database and seed admin user
 with app.app_context():
     db.create_all()
+
+    # Seed company_addresses table from Excel if empty
+    try:
+        if CompanyAddress.query.count() == 0:
+            import openpyxl
+            excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'company_address_data.xlsx')
+            if os.path.exists(excel_path):
+                wb = openpyxl.load_workbook(excel_path)
+                ws = wb.active
+                seeded = 0
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    name, pan_number, address = row[0], row[1], row[2]
+                    if name:
+                        entry = CompanyAddress(
+                            name=str(name).strip(),
+                            pan_number=str(pan_number).strip() if pan_number else None,
+                            address=str(address).strip() if address else None
+                        )
+                        db.session.add(entry)
+                        seeded += 1
+                db.session.commit()
+                print(f"Seeded {seeded} records into company_addresses table")
+            else:
+                print("company_address_data.xlsx not found, skipping seed")
+        else:
+            print(f"company_addresses already has {CompanyAddress.query.count()} records, skipping seed")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error seeding company_addresses: {e}")
     # Check and add missing columns dynamically to support database evolution safely
     try:
         from sqlalchemy import text
