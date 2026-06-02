@@ -10,7 +10,6 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, CompanyAddress
 import os
 import tempfile
 import atexit
@@ -30,19 +29,23 @@ from extract_ import extract_bank_details
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 app = Flask(__name__)
-# Database Configuration (SQLite for DocumentsTeam)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///documents.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Import PostgreSQL helper functions
+from models import create_tables, get_conn, release_conn
+# No SQLAlchemy configuration required
 
-db.init_app(app)
-
-# Initialize database and seed admin user
+# Initialize PostgreSQL tables on startup
 with app.app_context():
-    db.create_all()
+    # Ensure tables exist
+    create_tables()
 
-    # Seed company_addresses table from Excel if empty
+    # Seed company_addresses from Excel if empty
     try:
-        if CompanyAddress.query.count() == 0:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM company_addresses")
+            count = cur.fetchone()[0]
+        release_conn(conn)
+        if count == 0:
             import openpyxl
             excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'company_address_data.xlsx')
             if os.path.exists(excel_path):
@@ -52,71 +55,65 @@ with app.app_context():
                 for row in ws.iter_rows(min_row=2, values_only=True):
                     name, pan_number, address = row[0], row[1], row[2]
                     if name:
-                        entry = CompanyAddress(
-                            name=str(name).strip(),
-                            pan_number=str(pan_number).strip() if pan_number else None,
-                            address=str(address).strip() if address else None
-                        )
-                        db.session.add(entry)
+                        conn = get_conn()
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "INSERT INTO company_addresses (name, pan_number, address) VALUES (%s, %s, %s)",
+                                (str(name).strip(), str(pan_number).strip() if pan_number else None, str(address).strip() if address else None)
+                            )
+                            conn.commit()
+                        release_conn(conn)
                         seeded += 1
-                db.session.commit()
                 print(f"Seeded {seeded} records into company_addresses table")
             else:
                 print("company_address_data.xlsx not found, skipping seed")
         else:
-            print(f"company_addresses already has {CompanyAddress.query.count()} records, skipping seed")
+            print(f"company_addresses already has {count} records, skipping seed")
     except Exception as e:
-        db.session.rollback()
         print(f"Error seeding company_addresses: {e}")
+    
     # Check and add missing columns dynamically to support database evolution safely
     try:
-        from sqlalchemy import text
-        db.session.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR(100)"))
-        db.session.commit()
-        print("Successfully added email column to users table")
-    except Exception:
-        db.session.rollback()
-        
-    try:
-        from sqlalchemy import text
-        db.session.execute(text("ALTER TABLE users ADD COLUMN accessed_menus VARCHAR(255) DEFAULT 'fin-report,documat'"))
-        db.session.commit()
-        print("Successfully added accessed_menus column to users table")
-    except Exception:
-        db.session.rollback()
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100)")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS accessed_menus VARCHAR(255) DEFAULT 'fin-report,documat'")
+            conn.commit()
+        release_conn(conn)
+        print("Successfully ensured database columns exist")
+    except Exception as e:
+        print(f"Error during db column check: {e}")
     
-    # Remove the old admin user if it exists
-    old_admin = User.query.filter_by(employee_code='JC0033').first()
-    if old_admin:
-        db.session.delete(old_admin)
-        db.session.commit()
-        print("Removed old admin user: JC0033")
-
-    # Clean up lowercase 'admin' user by converting or deleting
-    lowercase_admin = User.query.filter_by(employee_code='admin').first()
-    if lowercase_admin:
-        db.session.delete(lowercase_admin)
-        db.session.commit()
-        print("Removed legacy lowercase admin user")
-
-    # Seed the new default admin user in uppercase
-    admin_user = User.query.filter_by(employee_code='ADMIN').first()
-    if not admin_user:
-        admin_user = User(
-            employee_code='ADMIN',
-            password=generate_password_hash('Admin@123'),
-            name='System Admin',
-            role='admin',
-            is_initial_password=True
-        )
-        db.session.add(admin_user)
-        db.session.commit()
-        print("Seeded default admin user: ADMIN / Admin@123")
-    elif admin_user.is_initial_password:
-        # Ensure password matches the requested default if still in initial state
-        admin_user.password = generate_password_hash('Admin@123')
-        db.session.commit()
-        print("Updated existing admin user password to: Admin@123")
+    # Remove the old admin user if it exists and clean up legacy admins
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            # Remove JC0033
+            cur.execute("DELETE FROM users WHERE employee_code = 'JC0033'")
+            # Remove lowercase admin
+            cur.execute("DELETE FROM users WHERE employee_code = 'admin'")
+            
+            # Check for uppercase ADMIN
+            cur.execute("SELECT id, is_initial_password FROM users WHERE employee_code = 'ADMIN'")
+            admin_row = cur.fetchone()
+            if not admin_row:
+                cur.execute(
+                    "INSERT INTO users (employee_code, password, name, role, is_initial_password) VALUES (%s, %s, %s, %s, %s)",
+                    ('ADMIN', generate_password_hash('Admin@123'), 'System Admin', 'admin', True)
+                )
+                print("Seeded default admin user: ADMIN / Admin@123")
+            else:
+                is_initial = admin_row[1]
+                if is_initial:
+                    cur.execute(
+                        "UPDATE users SET password = %s WHERE employee_code = 'ADMIN'",
+                        (generate_password_hash('Admin@123'),)
+                    )
+                    print("Updated existing admin user password to: Admin@123")
+            conn.commit()
+        release_conn(conn)
+    except Exception as e:
+        print(f"Error seeding/updating admin user: {e}")
 
 # Enable CORS for React frontend (default dev port 5173 for vite)
 CORS(app, resources={r"/*": {"origins": "*", "expose_headers": ["X-Process-Time", "Content-Disposition"]}})
@@ -1279,26 +1276,50 @@ def login():
         data = request.json
         emp_code = str(data.get('employee_code', '')).strip().upper()
         password = data.get('password', '')
-        
-        user = User.query.filter_by(employee_code=emp_code).first()
-        if user:
-            if check_password_hash(user.password, password):
-                return jsonify({
-                    'success': True,
-                    'user': {
-                        'employee_code': user.employee_code,
-                        'name': user.name,
-                        'role': user.role,
-                        'is_initial_password': user.is_initial_password,
-                        'accessed_menus': user.accessed_menus or 'fin-report,documat'
+
+        # --- DB query ---
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, employee_code, password, name, role, accessed_menus, is_initial_password "
+                    "FROM users WHERE employee_code = %s",
+                    (emp_code,)
+                )
+                row = cur.fetchone()
+        finally:
+            release_conn(conn)
+
+        if row:
+            user = {
+                "id": row[0],
+                "employee_code": row[1],
+                "password": row[2],
+                "name": row[3],
+                "role": row[4],
+                "accessed_menus": row[5] or "fin-report,documat",
+                "is_initial_password": row[6],
+            }
+            if check_password_hash(user["password"], password):
+                return jsonify(
+                    {
+                        "success": True,
+                        "user": {
+                            "employee_code": user["employee_code"],
+                            "name": user["name"],
+                            "role": user["role"],
+                            "is_initial_password": user["is_initial_password"],
+                            "accessed_menus": user["accessed_menus"],
+                        },
                     }
-                })
+                )
             else:
                 print("Password mismatch")
+                return jsonify({'success': False, 'message': 'Invalid employee code or password'}), 401
         else:
             print("User not found in DB")
-            
-        return jsonify({'success': False, 'message': 'Invalid employee code or password'}), 401
+            return jsonify({'success': False, 'message': 'Invalid employee code or password'}), 401
+
     except Exception as e:
         print(f"Login error: {str(e)}")
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1315,19 +1336,28 @@ def initial_setup():
         question = data.get('q1')
         answer = data.get('a1')
         
-        user = User.query.filter_by(employee_code=emp_code).first()
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Check user existence
+                cur.execute("SELECT id FROM users WHERE employee_code = %s", (emp_code,))
+                user_row = cur.fetchone()
+                if not user_row:
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                
+                # Update password and security question
+                pwd_hash = generate_password_hash(new_password)
+                ans_hash = generate_password_hash(answer.lower().strip())
+                cur.execute(
+                    "UPDATE users SET password = %s, is_initial_password = FALSE, security_question = %s, security_answer = %s WHERE employee_code = %s",
+                    (pwd_hash, question, ans_hash, emp_code)
+                )
+                conn.commit()
+        finally:
+            release_conn(conn)
             
-        user.password = generate_password_hash(new_password)
-        user.is_initial_password = False
-        user.security_question = question
-        user.security_answer = generate_password_hash(answer.lower().strip())
-        
-        db.session.commit()
         return jsonify({'success': True, 'message': 'Setup completed successfully'})
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/forgot-password/request/', methods=['POST'])
@@ -1339,9 +1369,16 @@ def forgot_password_request():
         data = request.json
         emp_code = str(data.get('employee_code', '')).strip().upper()
         
-        user = User.query.filter_by(employee_code=emp_code).first()
-        if (user and user.security_question):
-            return jsonify({'success': True, 'question': user.security_question, 'role': user.role})
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT security_question, role FROM users WHERE employee_code = %s", (emp_code,))
+                row = cur.fetchone()
+        finally:
+            release_conn(conn)
+            
+        if row and row[0]:
+            return jsonify({'success': True, 'question': row[0], 'role': row[1]})
         return jsonify({'success': False, 'message': 'User not found or security questions not set'}), 404
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1357,14 +1394,20 @@ def forgot_password_reset():
         answer = data.get('answer', '').lower().strip()
         new_password = data.get('new_password')
         
-        user = User.query.filter_by(employee_code=emp_code).first()
-        if user and user.security_answer and check_password_hash(user.security_answer, answer):
-            user.password = generate_password_hash(new_password)
-            db.session.commit()
-            return jsonify({'success': True, 'message': 'Password reset successful'})
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT security_answer FROM users WHERE employee_code = %s", (emp_code,))
+                row = cur.fetchone()
+                if row and row[0] and check_password_hash(row[0], answer):
+                    pwd_hash = generate_password_hash(new_password)
+                    cur.execute("UPDATE users SET password = %s WHERE employee_code = %s", (pwd_hash, emp_code))
+                    conn.commit()
+                    return jsonify({'success': True, 'message': 'Password reset successful'})
+        finally:
+            release_conn(conn)
         return jsonify({'success': False, 'message': 'Incorrect answer or user not found'}), 401
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 # --- User Management Routes ---
@@ -1375,18 +1418,25 @@ def get_all_users():
     Returns a list of all users in the system.
     """
     try:
-        users = User.query.all()
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, employee_code, name, email, role, accessed_menus, is_initial_password, security_question FROM users ORDER BY id ASC")
+                rows = cur.fetchall()
+        finally:
+            release_conn(conn)
+            
         user_list = []
-        for u in users:
+        for r in rows:
             user_list.append({
-                'id': u.id,
-                'employee_code': u.employee_code,
-                'name': u.name,
-                'email': u.email,
-                'role': u.role,
-                'accessed_menus': u.accessed_menus or 'fin-report,documat',
-                'is_initial_password': u.is_initial_password,
-                'security_question': u.security_question
+                'id': r[0],
+                'employee_code': r[1],
+                'name': r[2],
+                'email': r[3],
+                'role': r[4],
+                'accessed_menus': r[5] or 'fin-report,documat',
+                'is_initial_password': r[6],
+                'security_question': r[7]
             })
         return jsonify({'success': True, 'users': user_list})
     except Exception as e:
@@ -1409,10 +1459,6 @@ def create_user():
         if not emp_code or not name:
             return jsonify({'success': False, 'message': 'Employee code and name are required'}), 400
             
-        existing_user = User.query.filter_by(employee_code=emp_code).first()
-        if existing_user:
-            return jsonify({'success': False, 'message': 'A user with this employee code already exists'}), 400
-            
         # Convert list of menus to comma-separated string if needed
         if isinstance(accessed, list):
             accessed_str = ",".join(accessed)
@@ -1422,28 +1468,35 @@ def create_user():
         pwd_to_hash = temp_pwd if temp_pwd else '123456'
         pwd_hash = generate_password_hash(pwd_to_hash)
         
-        new_user = User(
-            employee_code=emp_code,
-            name=name,
-            email=email,
-            role=role,
-            password=pwd_hash,
-            accessed_menus=accessed_str,
-            is_initial_password=True
-        )
-        db.session.add(new_user)
-        db.session.commit()
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Check existence
+                cur.execute("SELECT id FROM users WHERE employee_code = %s", (emp_code,))
+                if cur.fetchone():
+                    return jsonify({'success': False, 'message': 'A user with this employee code already exists'}), 400
+                
+                # Insert
+                cur.execute(
+                    "INSERT INTO users (employee_code, name, email, role, password, accessed_menus, is_initial_password) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, TRUE) RETURNING id",
+                    (emp_code, name, email, role, pwd_hash, accessed_str)
+                )
+                new_id = cur.fetchone()[0]
+                conn.commit()
+        finally:
+            release_conn(conn)
+            
         return jsonify({'success': True, 'message': 'User created successfully', 'user': {
-            'id': new_user.id,
-            'employee_code': new_user.employee_code,
-            'name': new_user.name,
-            'email': new_user.email,
-            'role': new_user.role,
-            'accessed_menus': new_user.accessed_menus,
-            'is_initial_password': new_user.is_initial_password
+            'id': new_id,
+            'employee_code': emp_code,
+            'name': name,
+            'email': email,
+            'role': role,
+            'accessed_menus': accessed_str,
+            'is_initial_password': True
         }})
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
@@ -1452,15 +1505,22 @@ def delete_user(user_id):
     Deletes a user from the system by ID.
     """
     try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'success': False, 'message': 'User not found'}), 404
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Check if user exists
+                cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+                if not cur.fetchone():
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                
+                # Delete user
+                cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+                conn.commit()
+        finally:
+            release_conn(conn)
             
-        db.session.delete(user)
-        db.session.commit()
         return jsonify({'success': True, 'message': 'User deleted successfully'})
     except Exception as e:
-        db.session.rollback()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':

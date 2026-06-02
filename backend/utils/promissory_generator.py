@@ -423,35 +423,73 @@ def replace_address_in_paragraph(paragraph, ph, address_val):
 
 def get_lender_details_from_excel(lender_name):
     """
-    Look up company address and PAN from company_address_data.xlsx using the lender name.
+    Look up company address and PAN from PostgreSQL company_addresses table first,
+    falling back to company_address_data.xlsx using the lender name.
     """
     import os
     import openpyxl
     import re
+    import sys
     
-    excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'company_address_data.xlsx')
     default_details = {
         "address": "Bengaluru",
         "pan": "AATFJ7144B" # default fallback
     }
+    
+    target = lender_name.strip().upper()
+    
+    def clean_name(n):
+        if not n:
+            return ""
+        n = str(n).upper().strip()
+        # Remove M/S. or M/S or MR. or MRS.
+        n = re.sub(r'^(M/S\.?|MR\.?|MRS\.?)\s+', '', n)
+        return n.strip()
+        
+    clean_target = clean_name(target)
+    
+    # 1. Try PostgreSQL lookup first
+    try:
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+        from models import get_conn, release_conn
+        
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name, pan_number, address FROM company_addresses")
+                rows = cur.fetchall()
+        finally:
+            release_conn(conn)
+            
+        for row in rows:
+            name_val = row[0]
+            pan_val = row[1]
+            addr_val = row[2]
+            if name_val:
+                clean_row_name = clean_name(name_val)
+                if clean_row_name == clean_target:
+                    address = str(addr_val).replace('\xa0', ' ').strip() if addr_val else "Bengaluru"
+                    address = re.sub(r'\s+', ' ', address)
+                    address = format_company_address(address)
+                    pan = str(pan_val).strip().upper() if pan_val else ""
+                    print(f"Lender details for '{lender_name}' found in PostgreSQL database.")
+                    return {
+                        "address": address,
+                        "pan": pan
+                    }
+    except Exception as e:
+        print(f"PostgreSQL lender lookup failed or skipped: {e}")
+        
+    # 2. Fallback to company_address_data.xlsx Excel lookup
+    excel_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'company_address_data.xlsx')
     if not os.path.exists(excel_path):
         return default_details
         
     try:
         wb = openpyxl.load_workbook(excel_path, read_only=True)
         sheet = wb.active
-        
-        target = lender_name.strip().upper()
-        
-        def clean_name(n):
-            if not n:
-                return ""
-            n = str(n).upper().strip()
-            # Remove M/S. or M/S or MR. or MRS.
-            n = re.sub(r'^(M/S\.?|MR\.?|MRS\.?)\s+', '', n)
-            return n.strip()
-            
-        clean_target = clean_name(target)
         
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if not row or len(row) < 3:
@@ -464,9 +502,9 @@ def get_lender_details_from_excel(lender_name):
                 if clean_row_name == clean_target:
                     address = str(addr_val).replace('\xa0', ' ').strip() if addr_val else "Bengaluru"
                     address = re.sub(r'\s+', ' ', address)
-                    # Format to multi-line layout
                     address = format_company_address(address)
                     pan = str(pan_val).strip().upper() if pan_val else ""
+                    print(f"Lender details for '{lender_name}' found in company_address_data.xlsx fallback.")
                     return {
                         "address": address,
                         "pan": pan
@@ -474,7 +512,7 @@ def get_lender_details_from_excel(lender_name):
                     
         return default_details
     except Exception as e:
-        print(f"Error loading lender details from excel: {e}")
+        print(f"Error loading lender details from excel fallback: {e}")
         return default_details
 
 def fill_promissory_note_docx(form_data, joinees_list, template_path, output_path):
