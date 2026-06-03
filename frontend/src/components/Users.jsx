@@ -138,16 +138,13 @@ function Users({ user, onLogout, onTabChange }) {
             <main className="flex-1 flex flex-col bg-slate-50 dark:bg-[#101822] px-10 pt-10 pb-8 transition-colors duration-300 h-full overflow-hidden">
                 <div className="flex-1 flex flex-col min-h-0">
                     {/* Header Section */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 shrink-0">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 shrink-0">
                         <div className="flex flex-col items-start text-left gap-2 max-w-3xl">
                             <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">Users</h1>
-                            <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed transition-colors duration-300">
-                                View and manage user accounts, assign security roles, and monitor password setup progress.
-                            </p>
                         </div>
                         <button
                             onClick={() => setShowAddModal(true)}
-                            className="flex items-center justify-center gap-3 px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 active:scale-95 shrink-0 self-start md:self-center"
+                            className="flex items-center justify-center gap-3 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 active:scale-95 shrink-0 self-start md:self-center"
                         >
                             <span className="material-symbols-outlined text-lg">person_add</span>
                             Add User
@@ -205,11 +202,11 @@ function Users({ user, onLogout, onTabChange }) {
                                     <table className="w-full border-collapse text-left table-fixed">
                                         <colgroup>
                                             <col style={{width:'20%'}} />
-                                            <col style={{width:'14%'}} />
-                                            <col style={{width:'10%'}} />
-                                            <col style={{width:'18%'}} />
                                             <col style={{width:'12%'}} />
                                             <col style={{width:'8%'}} />
+                                            <col style={{width:'14%'}} />
+                                            <col style={{width:'10%'}} />
+                                            <col style={{width:'10%'}} />
                                         </colgroup>
                                         <thead>
                                             <tr className="text-slate-500 dark:text-slate-400 text-[11px] font-black uppercase tracking-[0.2em]">
@@ -218,7 +215,7 @@ function Users({ user, onLogout, onTabChange }) {
                                                 <th className="py-6 px-6">Role</th>
                                                 <th className="py-6 px-6">Accessed Menus</th>
                                                 <th className="py-6 px-6">Status</th>
-                                                <th className="py-6 px-8">Actions</th>
+                                                <th className="py-6 px-8 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                     </table>
@@ -229,11 +226,11 @@ function Users({ user, onLogout, onTabChange }) {
                                     <table className="w-full border-collapse text-left table-fixed">
                                         <colgroup>
                                             <col style={{width:'20%'}} />
-                                            <col style={{width:'14%'}} />
-                                            <col style={{width:'10%'}} />
-                                            <col style={{width:'18%'}} />
                                             <col style={{width:'12%'}} />
                                             <col style={{width:'8%'}} />
+                                            <col style={{width:'14%'}} />
+                                            <col style={{width:'10%'}} />
+                                            <col style={{width:'10%'}} />
                                         </colgroup>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                                             {pagedUsers.map((u) => {
@@ -243,9 +240,6 @@ function Users({ user, onLogout, onTabChange }) {
                                                     <tr key={u.id} className="hover:bg-slate-50/55 dark:hover:bg-slate-800/20 transition-colors duration-200">
                                                         <td className="py-5 px-8">
                                                             <div className="flex items-center gap-4">
-                                                                <div className="w-10 h-10 rounded-full bg-blue-600/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs ring-4 ring-blue-600/5 shrink-0">
-                                                                    {userInitials}
-                                                                </div>
                                                                 <div className="flex flex-col min-w-0">
                                                                     <span className="text-[15px] font-bold text-slate-950 dark:text-white flex items-center gap-2 truncate">
                                                                         {u.name}
@@ -272,17 +266,17 @@ function Users({ user, onLogout, onTabChange }) {
                                                         <td className="py-5 px-6">
                                                             <div className="flex flex-wrap gap-1">
                                                                 {(!u.accessed_menus || u.accessed_menus.includes('fin-report')) && (
-                                                                    <span className="px-2 py-0.5 bg-blue-600/10 text-blue-600 dark:text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-md border border-blue-600/20">
+                                                                    <span className="px-2 py-0.5 bg-blue-600/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-md border border-blue-600/20">
                                                                         Fin Report
                                                                     </span>
                                                                 )}
                                                                 {(!u.accessed_menus || u.accessed_menus.includes('documat')) && (
-                                                                    <span className="px-2 py-0.5 bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-md border border-indigo-600/20">
+                                                                    <span className="px-2 py-0.5 bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-md border border-indigo-600/20">
                                                                         Documat
                                                                     </span>
                                                                 )}
                                                                 {u.accessed_menus && !u.accessed_menus.includes('fin-report') && !u.accessed_menus.includes('documat') && (
-                                                                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-md">
+                                                                    <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-md">
                                                                         None
                                                                     </span>
                                                                 )}
@@ -300,26 +294,26 @@ function Users({ user, onLogout, onTabChange }) {
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <button
                                                                     onClick={() => alert(`Edit User feature is currently in design phase. Target user: ${u.name}`)}
-                                                                    className="h-10 w-10 inline-flex items-center justify-center rounded-xl text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all cursor-pointer"
+                                                                    className="h-9 w-9 inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-slate-800/80 dark:hover:bg-blue-500/10 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-all duration-200 cursor-pointer border border-slate-200/40 dark:border-slate-700/50"
                                                                     title="Edit User"
                                                                 >
-                                                                    <span className="material-symbols-outlined text-lg">edit</span>
+                                                                    <span className="material-symbols-outlined text-[18px]">edit</span>
                                                                 </button>
                                                                 {!isSelf ? (
                                                                     <button
                                                                         onClick={() => setUserToDelete(u)}
-                                                                        className="h-10 w-10 inline-flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all cursor-pointer"
+                                                                        className="h-9 w-9 inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-red-50 dark:bg-slate-800/80 dark:hover:bg-red-500/10 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 transition-all duration-200 cursor-pointer border border-slate-200/40 dark:border-slate-700/50"
                                                                         title="Delete User"
                                                                     >
-                                                                        <span className="material-symbols-outlined text-lg">delete</span>
+                                                                        <span className="material-symbols-outlined text-[18px]">delete</span>
                                                                     </button>
                                                                 ) : (
                                                                     <button
                                                                         disabled
-                                                                        className="h-10 w-10 inline-flex items-center justify-center rounded-xl text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-50"
+                                                                        className="h-9 w-9 inline-flex items-center justify-center rounded-xl bg-slate-100/50 dark:bg-slate-800/30 text-slate-300 dark:text-slate-700 cursor-not-allowed border border-slate-200/20 dark:border-slate-800/30"
                                                                         title="Cannot delete your own active account"
                                                                     >
-                                                                        <span className="material-symbols-outlined text-lg">delete</span>
+                                                                        <span className="material-symbols-outlined text-[18px]">delete</span>
                                                                     </button>
                                                                 )}
                                                             </div>

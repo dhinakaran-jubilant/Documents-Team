@@ -11,6 +11,7 @@ import Upload from './components/Upload';
 import Documat from './components/Documat';
 import Login from './components/Login';
 import Users from './components/Users';
+import History from './components/History';
 
 /**
  * Main App component.
@@ -99,6 +100,10 @@ function App() {
 
   if (activeTab === 'users') {
     return <Users user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+  }
+
+  if (activeTab === 'history') {
+    return <History user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
   }
 
   return <Upload user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;

@@ -442,8 +442,8 @@ def get_lender_details_from_excel(lender_name):
         if not n:
             return ""
         n = str(n).upper().strip()
-        # Remove M/S. or M/S or MR. or MRS.
-        n = re.sub(r'^(M/S\.?|MR\.?|MRS\.?)\s+', '', n)
+        # Remove M/S. or M/S or M/R. or M/R or MR. or MRS.
+        n = re.sub(r'^(M/S\.?|M/R\.?|MR\.?|MRS\.?)\s+', '', n)
         return n.strip()
         
     clean_target = clean_name(target)

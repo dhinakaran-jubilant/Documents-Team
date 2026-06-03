@@ -1209,6 +1209,42 @@ def handle_generate_promissory_note():
             
         zip_filename = f"Documents_{proprietor_name_clean}.zip"
         
+        # Save to database history
+        try:
+            username = data.get('username', 'System User')
+            lenders = ", ".join([l.get('lenderName', '') for l in loans if l.get('lenderName')])
+            total_amt = 0
+            for l in loans:
+                amt_str = str(l.get('loanAmount', '0')).replace(',', '').strip()
+                if amt_str:
+                    try:
+                        total_amt += float(amt_str)
+                    except ValueError:
+                        pass
+            total_amt_str = f"{total_amt:,.2f}" if total_amt > 0 else "0.00"
+
+            import json
+            form_payload = {
+                'formData': form_data,
+                'loans': loans,
+                'joinees': joinees_list
+            }
+            form_data_json = json.dumps(form_payload)
+            entity_type = data.get('entityType', 'Proprietor')
+
+            conn = get_conn()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO document_generation_history (username, proprietor_name, lenders, total_loan_amount, has_guarantor, entity_type, form_data, generated_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (username, form_data.get('proprietorName', 'Unknown'), lenders, total_amt_str, has_guarantor, entity_type, form_data_json)
+                )
+                conn.commit()
+            release_conn(conn)
+            print(f"Logged Documat generation for '{form_data.get('proprietorName')}' by '{username}' in history.")
+        except Exception as he:
+            print(f"Error logging Documat history: {he}")
+            
         return send_file(
             zip_bytes,
             mimetype='application/zip',
@@ -1520,6 +1556,86 @@ def delete_user(user_id):
             release_conn(conn)
             
         return jsonify({'success': True, 'message': 'User deleted successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/company-addresses/', methods=['GET'])
+def get_company_addresses():
+    """
+    Returns a list of all company addresses in the database.
+    """
+    try:
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name, pan_number, address FROM company_addresses ORDER BY name")
+                rows = cur.fetchall()
+                addresses = []
+                for r in rows:
+                    addresses.append({
+                        'name': r[0],
+                        'pan_number': r[1],
+                        'address': r[2]
+                    })
+        finally:
+            release_conn(conn)
+        return jsonify({'success': True, 'addresses': addresses})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/documat/history/', methods=['GET'])
+def get_documat_history():
+    """
+    Returns a list of all documat document generation history records in the system.
+    """
+    try:
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username, proprietor_name, lenders, total_loan_amount, has_guarantor, generated_at, entity_type, form_data, updated_at FROM document_generation_history ORDER BY generated_at DESC")
+                rows = cur.fetchall()
+        finally:
+            release_conn(conn)
+            
+        history_list = []
+        for r in rows:
+            history_list.append({
+                'id': r[0],
+                'username': r[1],
+                'proprietor_name': r[2],
+                'lenders': r[3],
+                'total_loan_amount': r[4],
+                'has_guarantor': r[5],
+                'generated_at': r[6].strftime('%Y-%m-%d %H:%M:%S') if r[6] else None,
+                'entity_type': r[7] if r[7] else 'Proprietor',
+                'form_data': r[8] if r[8] else '{}',
+                'updated_at': r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else None
+            })
+        return jsonify({'success': True, 'history': history_list})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/documat/history/<int:history_id>', methods=['DELETE'])
+def delete_documat_history(history_id):
+    """
+    Deletes a specific history record from the system.
+    """
+    try:
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Check if history exists
+                cur.execute("SELECT id FROM document_generation_history WHERE id = %s", (history_id,))
+                if not cur.fetchone():
+                    return jsonify({'success': False, 'message': 'History record not found'}), 404
+                
+                # Delete record
+                cur.execute("DELETE FROM document_generation_history WHERE id = %s", (history_id,))
+                conn.commit()
+        finally:
+            release_conn(conn)
+            
+        return jsonify({'success': True, 'message': 'History record deleted successfully'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

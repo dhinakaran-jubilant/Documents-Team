@@ -84,6 +84,19 @@ const Layout = ({ children, user, onLogout, onTabChange, onTabClick, activeTab =
                             </div>
                         )}
 
+                        <div
+                            onClick={() => {
+                                onTabChange && onTabChange('history');
+                                onTabClick && onTabClick('history');
+                            }}
+                            className={`flex items-center gap-3 px-6 h-14 rounded-2xl transition-all cursor-pointer ${activeTab === 'history'
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                : 'bg-slate-100/50 dark:bg-slate-800/20 text-slate-600 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/40'}`}
+                        >
+                            <span className="material-symbols-outlined">history</span>
+                            <span className="text-[12px] font-black uppercase tracking-[0.2em]">History</span>
+                        </div>
+
                         {user?.role === 'admin' && (
                             <div
                                 onClick={() => {

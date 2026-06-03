@@ -23,34 +23,10 @@ const toTitleCase = (str) => {
     return str.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
-const LENDER_OPTIONS = [
-    'JUBILANT CAPITAL',
-    'EASY CREDIT SOLUTION',
-    'SURGE CAPITAL SOLUTIONS',
-    'FORTUNE ENTERPRISES',
-    'GROWTH CAPITAL',
-    'ROHIT ENTERPRISES',
-    'SATHYAM CREDIT SOLUTION',
-    'SHRINITHA ASSOCIATES',
-    'S. BALAKRISHNAN',
-    'Mrs. SUDHAKAR NIRMALA',
-    'S.NANDHINI DEVI',
-    'SUDHAKAR SIVARAMAN (HUF)',
-    'S. SUDHAKAR',
-    'NEXUS CAPITAL',
-    'SRI GURUDEV ENTERPRISES',
-    'SENTHIL VADIVEL. A.J.',
-    'Maps Enterprises',
-    'ASCEND SOLUTIONS',
-    'Veerappan Marudhamani HUF',
-    'A. SINGARAVALLI',
-    'J SENTHIL VADIVEL HUF',
-    'Dinesh HUF',
-    'C A PRASANTH',
-    'C. VAITHYALINGAM',
-    'S. Bharathi',
-    'SHARVIL ENTERPRISES'
-];
+const cleanDisplayLenderName = (name) => {
+    if (!name) return '';
+    return name.replace(/^(M\/S|M\/R|MRS|MR)(?:\.|\s)\s*/i, '').trim();
+};
 
 const Documat = ({ user, onLogout, onTabChange }) => {
     const [step, setStep] = useState(1);
@@ -77,18 +53,40 @@ const Documat = ({ user, onLogout, onTabChange }) => {
         pincode: '',
         interest: '18',
         loanAmount: '',
-        lenderName: 'JUBILANT CAPITAL',
+        lenderName: '',
         repayment: '',
         signatureValid: false,
     });
     const [joinees, setJoinees] = useState([]);
     const [loans, setLoans] = useState([
-        { lenderName: 'JUBILANT CAPITAL', loanAmount: '', repayment: '' }
+        { lenderName: '', loanAmount: '', repayment: '' }
     ]);
     const [processingGuarantors, setProcessingGuarantors] = useState({});
     const [isBankProcessing, setIsBankProcessing] = useState(false);
     const [openDropdownIdx, setOpenDropdownIdx] = useState(null);
     const [dropdownDirection, setDropdownDirection] = useState({});
+    const [lenderOptions, setLenderOptions] = useState([]);
+
+    useEffect(() => {
+        const fetchLenders = async () => {
+            try {
+                const response = await fetch(`${config.API_BASE_URL}/api/company-addresses/`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.addresses) {
+                        // Extract and sort distinct non-empty lender names from PostgreSQL company_addresses table
+                        const names = data.addresses.map(a => a.name).filter(Boolean);
+                        if (names.length > 0) {
+                            setLenderOptions(names);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching dynamic lender names:", err);
+            }
+        };
+        fetchLenders();
+    }, []);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -177,13 +175,13 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                 pincode: '',
                 interest: '18',
                 loanAmount: '',
-                lenderName: 'JUBILANT CAPITAL',
+                lenderName: '',
                 repayment: '',
                 signatureValid: false,
             });
             setJoinees([]);
             setLoans([
-                { lenderName: 'JUBILANT CAPITAL', loanAmount: '', repayment: '' }
+                { lenderName: '', loanAmount: '', repayment: '' }
             ]);
             setOpenDropdownIdx(null);
             setDropdownDirection({});
@@ -265,7 +263,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
         const cleanedFormData = {
             ...formData,
             proprietorName: fullProprietorName,
-            lenderName: loans[0]?.lenderName || 'JUBILANT CAPITAL',
+            lenderName: loans[0]?.lenderName || '',
             loanAmount: (loans[0]?.loanAmount || '').replace(/,/g, ''),
             repayment: (loans[0]?.repayment || '').replace(/,/g, '')
         };
@@ -293,6 +291,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     formData: cleanedFormData,
                     loans: cleanedLoans,
                     joinees: cleanedJoinees,
+                    username: user?.name || user?.employee_code || 'System User',
+                    entityType: selectedType,
                 }),
             });
 
@@ -669,7 +669,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                 </div>
 
                                 {/* Onboarding Details Section */}
-                                <div className="mb-10 p-8 rounded-[2rem] bg-slate-50/80 dark:bg-[#030712]/50 border border-slate-100 dark:border-slate-800/50 relative overflow-hidden">
+                                <div className="mb-10 p-8 rounded-[2rem] bg-slate-50/80 dark:bg-[#030712]/50 border border-slate-100 dark:border-slate-800/50 relative">
                                     <div className="space-y-8">
                                         {/* Company & Proprietor Details */}
                                         <div className="space-y-6 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20 relative overflow-hidden">
@@ -754,7 +754,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        setLoans([...loans, { lenderName: 'JUBILANT CAPITAL', loanAmount: '', repayment: '' }]);
+                                                        setLoans([...loans, { lenderName: '', loanAmount: '', repayment: '' }]);
                                                         setOpenDropdownIdx(null);
                                                     }}
                                                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-blue-600 shadow-md shadow-blue-600/20 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
@@ -787,12 +787,15 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         <div className="space-y-2">
                                                             <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Lender Firm Name <span className="text-red-500">*</span></label>
                                                             <div className="relative" id={`lender-dropdown-${idx}`}>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        if (openDropdownIdx === idx) {
-                                                                            setOpenDropdownIdx(null);
-                                                                        } else {
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Select or enter lender name"
+                                                                    value={loan.lenderName ? cleanDisplayLenderName(loan.lenderName) : ''}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...loans];
+                                                                        updated[idx].lenderName = e.target.value;
+                                                                        setLoans(updated);
+                                                                        if (openDropdownIdx !== idx) {
                                                                             const rect = e.currentTarget.getBoundingClientRect();
                                                                             const spaceBelow = window.innerHeight - rect.bottom;
                                                                             const shouldOpenUpward = spaceBelow < 260;
@@ -803,44 +806,97 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                                             setOpenDropdownIdx(idx);
                                                                         }
                                                                     }}
-                                                                    className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all flex items-center justify-between text-left uppercase font-semibold text-sm cursor-pointer"
+                                                                    onFocus={(e) => {
+                                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                                        const spaceBelow = window.innerHeight - rect.bottom;
+                                                                        const shouldOpenUpward = spaceBelow < 260;
+                                                                        setDropdownDirection(prev => ({
+                                                                            ...prev,
+                                                                            [idx]: shouldOpenUpward ? 'top' : 'bottom'
+                                                                        }));
+                                                                        setOpenDropdownIdx(idx);
+                                                                    }}
+                                                                    className="w-full px-6 py-4 pr-12 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase font-semibold text-sm placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    tabIndex="-1"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (openDropdownIdx === idx) {
+                                                                            setOpenDropdownIdx(null);
+                                                                        } else {
+                                                                            const rect = e.currentTarget.parentNode.getBoundingClientRect();
+                                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                                            const shouldOpenUpward = spaceBelow < 260;
+                                                                            setDropdownDirection(prev => ({
+                                                                                ...prev,
+                                                                                [idx]: shouldOpenUpward ? 'top' : 'bottom'
+                                                                            }));
+                                                                            setOpenDropdownIdx(idx);
+                                                                        }
+                                                                    }}
+                                                                    className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center justify-center p-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
                                                                 >
-                                                                    <span className={loan.lenderName ? "text-slate-950 dark:text-slate-100 font-medium" : "text-slate-400 dark:text-slate-500"}>
-                                                                        {loan.lenderName || "Select Lender Firm Name"}
-                                                                    </span>
-                                                                    <span className={`material-symbols-outlined text-slate-400 dark:text-slate-500 transition-transform duration-200 ${openDropdownIdx === idx ? 'rotate-180' : ''}`}>
+                                                                    <span className={`material-symbols-outlined transition-transform duration-200 ${openDropdownIdx === idx ? 'rotate-180' : ''}`}>
                                                                         expand_more
                                                                     </span>
                                                                 </button>
 
-                                                                {openDropdownIdx === idx && (
-                                                                    <div className={`absolute z-50 w-full bg-white dark:bg-[#0f172b]/95 border border-slate-200 dark:border-slate-800/80 rounded-2xl shadow-xl backdrop-blur-xl overflow-hidden dropdown-fade-in ${dropdownDirection[idx] === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-                                                                        }`}>
-                                                                        <div className="max-h-60 overflow-y-auto scrollbar-slim py-2">
-                                                                            {LENDER_OPTIONS.map((option) => (
-                                                                                <button
-                                                                                    key={option}
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        const updated = [...loans];
-                                                                                        updated[idx].lenderName = option;
-                                                                                        setLoans(updated);
-                                                                                        setOpenDropdownIdx(null);
-                                                                                    }}
-                                                                                    className={`w-full px-6 py-3 text-left uppercase text-xs font-semibold tracking-wider transition-all duration-150 flex items-center justify-between cursor-pointer ${loan.lenderName === option
-                                                                                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-500 pl-5'
-                                                                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 border-l-4 border-transparent'
-                                                                                        }`}
-                                                                                >
-                                                                                    <span>{option}</span>
-                                                                                    {loan.lenderName === option && (
-                                                                                        <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-sm font-bold">check</span>
-                                                                                    )}
-                                                                                </button>
-                                                                            ))}
+                                                                {openDropdownIdx === idx && (() => {
+                                                                    const searchVal = (loan.lenderName || '').trim();
+                                                                    const isExactMatch = lenderOptions.some(option => 
+                                                                        option.toUpperCase() === searchVal.toUpperCase() || 
+                                                                        cleanDisplayLenderName(option).toUpperCase() === searchVal.toUpperCase()
+                                                                    );
+                                                                    const filteredOptions = (searchVal && !isExactMatch)
+                                                                        ? lenderOptions.filter(option => {
+                                                                            const cleanOption = option.toUpperCase();
+                                                                            const cleanDisplayOption = cleanDisplayLenderName(option).toUpperCase();
+                                                                            const upperSearchVal = searchVal.toUpperCase();
+                                                                            return cleanOption.includes(upperSearchVal) || cleanDisplayOption.includes(upperSearchVal);
+                                                                        })
+                                                                        : lenderOptions;
+
+                                                                    return (
+                                                                        <div className={`absolute z-50 w-full bg-white dark:bg-[#0f172b]/95 border border-slate-200 dark:border-slate-800/80 rounded-2xl shadow-xl backdrop-blur-xl overflow-hidden dropdown-fade-in ${dropdownDirection[idx] === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                                                                            }`}>
+                                                                            <div className="max-h-60 overflow-y-auto scrollbar-slim py-2">
+                                                                                {filteredOptions.length > 0 ? (
+                                                                                    filteredOptions.map((option, oIdx) => (
+                                                                                        <React.Fragment key={option}>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => {
+                                                                                                    const updated = [...loans];
+                                                                                                    updated[idx].lenderName = option;
+                                                                                                    setLoans(updated);
+                                                                                                    setOpenDropdownIdx(null);
+                                                                                                }}
+                                                                                                className={`w-full px-6 py-3.5 text-left uppercase text-xs font-semibold tracking-wider transition-all duration-150 flex items-center justify-between cursor-pointer ${loan.lenderName === option
+                                                                                                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border-l-4 border-blue-500 pl-5'
+                                                                                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 border-l-4 border-transparent'
+                                                                                                    }`}
+                                                                                            >
+                                                                                                <span>{cleanDisplayLenderName(option)}</span>
+                                                                                                {loan.lenderName === option && (
+                                                                                                    <span className="material-symbols-outlined text-blue-500 dark:text-blue-400 text-sm font-bold">check</span>
+                                                                                                )}
+                                                                                            </button>
+                                                                                            {oIdx < filteredOptions.length - 1 && (
+                                                                                                <hr className="border-slate-200 dark:border-slate-600/20 my-0 mx-4" />
+                                                                                            )}
+                                                                                        </React.Fragment>
+                                                                                    ))
+                                                                                ) : (
+                                                                                    <div className="px-6 py-4 text-xs font-semibold text-slate-400 dark:text-slate-500 text-center uppercase tracking-wider">
+                                                                                        No matching lender firms
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                )}
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </div>
                                                         <div className="space-y-2">

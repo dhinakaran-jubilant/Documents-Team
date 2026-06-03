@@ -53,6 +53,23 @@ def create_tables():
                     address TEXT
                 );
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS document_generation_history (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL,
+                    proprietor_name VARCHAR(255) NOT NULL,
+                    lenders TEXT,
+                    total_loan_amount VARCHAR(50),
+                    has_guarantor BOOLEAN DEFAULT FALSE,
+                    entity_type VARCHAR(100),
+                    form_data TEXT,
+                    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cur.execute("ALTER TABLE document_generation_history ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100)")
+            cur.execute("ALTER TABLE document_generation_history ADD COLUMN IF NOT EXISTS form_data TEXT")
+            cur.execute("ALTER TABLE document_generation_history ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
             conn.commit()
     finally:
         release_conn(conn)
