@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from './Layout';
 import config from './config';
 
@@ -338,7 +338,6 @@ const Documat = ({ user, onLogout, onTabChange }) => {
         setIsProcessing(true);
 
         let batchedFormDataUpdates = {};
-        let batchedJoinees = [...joinees]; // Guarantor logic removed, but kept for safe refactor
 
         for (const file of selectedFiles) {
             const data = new FormData();
