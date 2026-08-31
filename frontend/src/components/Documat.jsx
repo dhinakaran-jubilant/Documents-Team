@@ -337,9 +337,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
         setIsProcessing(true);
 
-        // Local state copies to track asynchronous changes synchronously inside the loop
-        let currentFormData = { ...formData };
-        let currentJoinees = [...joinees];
+        let batchedFormDataUpdates = {};
+        let batchedJoinees = [...joinees]; // Guarantor logic removed, but kept for safe refactor
 
         for (const file of selectedFiles) {
             const data = new FormData();
@@ -357,13 +356,13 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
                     // 1. If it's a GST certificate, it's always the Proprietor
                     if (docType === 'gst' && selectedType === 'Proprietor') {
-                        currentFormData = {
-                            ...currentFormData,
-                            companyName: result.data.trade_name || currentFormData.companyName,
-                            proprietorPan: result.data.pan_number || currentFormData.proprietorPan,
-                            companyAddress: result.data.business_address ? toTitleCase(result.data.business_address) : currentFormData.companyAddress,
-                            place: result.data.district || currentFormData.place,
-                            signatureValid: result.data.signature_valid !== undefined ? result.data.signature_valid : currentFormData.signatureValid,
+                        batchedFormDataUpdates = {
+                            ...batchedFormDataUpdates,
+                            companyName: result.data.trade_name || '',
+                            proprietorPan: result.data.pan_number || '',
+                            companyAddress: result.data.business_address ? toTitleCase(result.data.business_address) : '',
+                            place: result.data.district || '',
+                            signatureValid: result.data.signature_valid !== undefined ? result.data.signature_valid : false,
                         };
                         continue;
                     }
@@ -378,70 +377,39 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
                     const fatherNameExtracted = result.data.father_name ? result.data.father_name.toUpperCase() : '';
 
-                    // 3. Determine if it belongs to the Proprietor or a Guarantor
-                    let isProprietorDoc = true;
-
-                    if (currentFormData.proprietorName && cleanName) {
-                        const cleanPropName = currentFormData.proprietorName
-                            .split(/\s+/)
-                            .filter(part => part.replace(/\./g, '').length > 0)
-                            .join(' ')
-                            .toUpperCase();
-
-                        // If proprietor name is set and differs from document name, it's a Guarantor doc
-                        if (cleanName !== cleanPropName) {
-                            isProprietorDoc = false;
-                        }
+                    // Update Proprietor details unconditionally (since this is the proprietor upload handler)
+                    let updates = { ...batchedFormDataUpdates };
+                    
+                    if (result.data.gender) {
+                        updates.proprietorTitle = result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.';
                     }
-
-                    if (isProprietorDoc) {
-                        // Update Proprietor details
-                        currentFormData = {
-                            ...currentFormData,
-                            proprietorTitle: result.data.gender ? (result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.') : currentFormData.proprietorTitle,
-                            companyName: result.data.trade_name || currentFormData.companyName,
-                            proprietorName: cleanName || currentFormData.proprietorName,
-                            fatherOfProprietor: fatherNameExtracted || currentFormData.fatherOfProprietor,
-                            companyAddress: (result.data.business_address || result.data.address) ? toTitleCase(result.data.business_address || result.data.address) : currentFormData.companyAddress,
-                            place: result.data.district || currentFormData.place,
-                            signatureValid: result.data.signature_valid !== undefined ? result.data.signature_valid : currentFormData.signatureValid,
-                        };
-                        if (docType === 'pan' && result.data.pan_number) {
-                            currentFormData.proprietorPan = result.data.pan_number.toUpperCase();
-                        }
-                    } else {
-                        // Update or Add a Guarantor Card!
-                        let guarantorIndex = currentJoinees.findIndex(j => {
-                            const cleanJName = (j.name || '')
-                                .split(/\s+/)
-                                .filter(part => part.replace(/\./g, '').length > 0)
-                                .join(' ')
-                                .toUpperCase();
-                            return cleanJName && cleanName === cleanJName;
-                        });
-
-                        if (guarantorIndex === -1) {
-                            // Create a new guarantor card!
-                            const newGuarantor = {
-                                name: cleanName,
-                                title: result.data.gender ? (result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.') : 'Mr.',
-                                father: fatherNameExtracted,
-                                pan: docType === 'pan' && result.data.pan_number ? result.data.pan_number.toUpperCase() : '',
-                                address: docType === 'aadhaar' && (result.data.business_address || result.data.address) ? toTitleCase(result.data.business_address || result.data.address) : ''
-                            };
-                            currentJoinees.push(newGuarantor);
-                        } else {
-                            // Merge details into existing guarantor card!
-                            currentJoinees[guarantorIndex] = {
-                                ...currentJoinees[guarantorIndex],
-                                name: cleanName || currentJoinees[guarantorIndex].name,
-                                title: result.data.gender ? (result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.') : currentJoinees[guarantorIndex].title,
-                                father: fatherNameExtracted || currentJoinees[guarantorIndex].father,
-                                pan: docType === 'pan' && result.data.pan_number ? result.data.pan_number.toUpperCase() : currentJoinees[guarantorIndex].pan,
-                                address: docType === 'aadhaar' && (result.data.business_address || result.data.address) ? toTitleCase(result.data.business_address || result.data.address) : currentJoinees[guarantorIndex].address
-                            };
-                        }
+                    if (result.data.trade_name !== undefined) {
+                        updates.companyName = result.data.trade_name || '';
                     }
+                    if (cleanName) {
+                        updates.proprietorName = cleanName;
+                    }
+                    if (fatherNameExtracted) {
+                        updates.fatherOfProprietor = fatherNameExtracted;
+                    }
+                    
+                    const extractedAddress = result.data.business_address || result.data.address;
+                    if (extractedAddress) {
+                        updates.companyAddress = toTitleCase(extractedAddress);
+                    }
+                    if (result.data.district) {
+                        updates.place = result.data.district;
+                    }
+                    if (result.data.signature_valid !== undefined) {
+                        updates.signatureValid = result.data.signature_valid;
+                    }
+                    
+                    if (docType === 'pan' && result.data.pan_number) {
+                        updates.proprietorPan = result.data.pan_number.toUpperCase();
+                    }
+                    
+                    batchedFormDataUpdates = updates;
+
                 } else {
                     console.error(result.error);
                     alert(`Failed to process ${file.name}: ${result.error}`);
@@ -452,9 +420,10 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             }
         }
 
-        // Apply all batched updates to React state
-        setFormData(currentFormData);
-        setJoinees(currentJoinees);
+        // Apply all batched updates to React state functionally
+        if (Object.keys(batchedFormDataUpdates).length > 0) {
+            setFormData(prev => ({ ...prev, ...batchedFormDataUpdates }));
+        }
         setIsProcessing(false);
         e.target.value = '';
     };
@@ -465,7 +434,6 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
         setIsProcessing(true);
         setProcessingGuarantors(prev => ({ ...prev, [index]: true }));
-        const updatedJoinees = [...joinees];
 
         try {
             for (const file of selectedFiles) {
@@ -481,42 +449,52 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
                     if (result.success && result.data) {
                         const data = result.data;
+                        
+                        setJoinees(prevJoinees => {
+                            const updated = [...prevJoinees];
+                            if (!updated[index]) return updated;
 
-                        if (data.document_type === 'aadhaar') {
-                            const legalName = data.legal_name || data.name || '';
-                            const cleanName = legalName
-                                .split(/\s+/)
-                                .filter((part) => part.replace(/\./g, '').length > 0)
-                                .join(' ');
-
-                            updatedJoinees[index].name = cleanName ? cleanName.toUpperCase() : updatedJoinees[index].name;
-
-                            if (data.father_name) {
-                                updatedJoinees[index].father = data.father_name.toUpperCase();
-                            }
-                            if (data.gender) {
-                                updatedJoinees[index].title = data.gender === 'MALE' ? 'Mr.' : 'Mrs.';
-                            }
-                            const addr = data.business_address || data.address;
-                            if (addr) {
-                                updatedJoinees[index].address = toTitleCase(addr);
-                            }
-                        } else if (data.document_type === 'pan') {
-                            if (data.pan_number) {
-                                updatedJoinees[index].pan = data.pan_number.toUpperCase();
-                            }
-                            const panName = data.legal_name || data.name;
-                            if (!updatedJoinees[index].name && panName) {
-                                const cleanName = panName
+                            if (data.document_type === 'aadhaar') {
+                                const legalName = data.legal_name || data.name || '';
+                                const cleanName = legalName
                                     .split(/\s+/)
-                                    .filter(part => part.replace(/\./g, '').length > 1)
+                                    .filter((part) => part.replace(/\./g, '').length > 0)
                                     .join(' ');
-                                updatedJoinees[index].name = cleanName ? cleanName.toUpperCase() : updatedJoinees[index].name;
+
+                                if (cleanName) {
+                                    updated[index].name = cleanName.toUpperCase();
+                                }
+
+                                if (data.father_name) {
+                                    updated[index].father = data.father_name.toUpperCase();
+                                }
+                                if (data.gender) {
+                                    updated[index].title = data.gender === 'MALE' ? 'Mr.' : 'Mrs.';
+                                }
+                                const addr = data.business_address || data.address;
+                                if (addr) {
+                                    updated[index].address = toTitleCase(addr);
+                                }
+                            } else if (data.document_type === 'pan') {
+                                if (data.pan_number) {
+                                    updated[index].pan = data.pan_number.toUpperCase();
+                                }
+                                const panName = data.legal_name || data.name;
+                                if (panName) {
+                                    const cleanName = panName
+                                        .split(/\s+/)
+                                        .filter(part => part.replace(/\./g, '').length > 1)
+                                        .join(' ');
+                                    if (cleanName) {
+                                        updated[index].name = cleanName.toUpperCase();
+                                    }
+                                }
+                                if (data.father_name) {
+                                    updated[index].father = data.father_name.toUpperCase();
+                                }
                             }
-                            if (!updatedJoinees[index].father && data.father_name) {
-                                updatedJoinees[index].father = data.father_name.toUpperCase();
-                            }
-                        }
+                            return updated;
+                        });
                     } else {
                         console.error(result.error);
                         alert(`Failed to process ${file.name}: ${result.error}`);
@@ -526,7 +504,6 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     alert(`Error connecting to server while processing ${file.name}`);
                 }
             }
-            setJoinees(updatedJoinees);
         } finally {
             setProcessingGuarantors(prev => {
                 const next = { ...prev };
@@ -539,16 +516,14 @@ const Documat = ({ user, onLogout, onTabChange }) => {
     };
 
     const handleBankUpload = async (e) => {
-        const selectedFiles = Array.from(e.target.files);
-        if (selectedFiles.length === 0) return;
+        const file = e.target.files[0];
+        if (!file) return;
 
         setIsBankProcessing(true);
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', file);
 
         try {
-            const file = selectedFiles[0];
-            const uploadFormData = new FormData();
-            uploadFormData.append('file', file);
-
             const response = await fetch(`${config.API_BASE_URL}/extract-bank`, {
                 method: 'POST',
                 body: uploadFormData,
@@ -556,19 +531,29 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             const result = await response.json();
 
             if (result.success && result.data) {
-                const { ifsc, account_number } = result.data;
-                setFormData(prev => ({
-                    ...prev,
-                    ifsc: ifsc ? ifsc.toUpperCase() : prev.ifsc,
-                    accountNumber: account_number ? account_number.toUpperCase() : prev.accountNumber
-                }));
+                setFormData(prev => {
+                    let updates = { ...prev };
+                    if (result.data.account_number) {
+                        updates.accountNumber = result.data.account_number;
+                    }
+                    if (result.data.ifsc_code) {
+                        updates.ifsc = result.data.ifsc_code;
+                    }
+                    if (result.data.bank_name) {
+                        updates.bankName = result.data.bank_name;
+                    }
+                    if (result.data.branch_name) {
+                        updates.branch = result.data.branch_name;
+                    }
+                    return updates;
+                });
             } else {
                 console.error(result.error);
-                alert(`Failed to process bank document: ${result.error}`);
+                alert(`Failed to extract bank details: ${result.error}`);
             }
         } catch (error) {
-            console.error("Error uploading bank document:", error);
-            alert("Error connecting to server while processing bank document");
+            console.error('Error uploading bank document:', error);
+            alert('Error connecting to server to extract bank details.');
         } finally {
             setIsBankProcessing(false);
             e.target.value = '';
@@ -686,6 +671,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         accept="image/*,.pdf"
                                                         multiple
                                                         onChange={handleProprietorUpload}
+                                                        onClick={(e) => { e.target.value = null; }}
                                                         className="hidden"
                                                     />
                                                     <span className="material-symbols-outlined text-lg">upload_file</span>
@@ -992,6 +978,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         type="file"
                                                         accept="image/*,.pdf"
                                                         onChange={handleBankUpload}
+                                                        onClick={(e) => { e.target.value = null; }}
                                                         className="hidden"
                                                     />
                                                     <span className="material-symbols-outlined text-lg">upload_file</span>
@@ -1059,6 +1046,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                                     multiple
                                                                     accept="image/*,.pdf"
                                                                     onChange={(e) => handleGuarantorUpload(e, index)}
+                                                                    onClick={(e) => { e.target.value = null; }}
                                                                     className="hidden"
                                                                 />
                                                                 <span className="material-symbols-outlined text-lg">upload_file</span>
