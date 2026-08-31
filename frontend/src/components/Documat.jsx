@@ -355,10 +355,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                 if (result.success && result.data) {
                     const docType = result.data.document_type;
 
-                    const isPdf = file.name.toLowerCase().endsWith('.pdf');
-
-                    // 1. If it's a PDF (GST), it's always the Proprietor
-                    if (isPdf && selectedType === 'Proprietor') {
+                    // 1. If it's a GST certificate, it's always the Proprietor
+                    if (docType === 'gst' && selectedType === 'Proprietor') {
                         currentFormData = {
                             ...currentFormData,
                             companyName: result.data.trade_name || currentFormData.companyName,
@@ -374,21 +372,19 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     const legalName = result.data.name || result.data.legal_name || '';
                     const cleanName = legalName
                         .split(/\s+/)
-                        .filter(part => part.replace(/\./g, '').length > 1)
+                        .filter(part => part.replace(/\./g, '').length > 0)
                         .join(' ')
                         .toUpperCase();
 
                     const fatherNameExtracted = result.data.father_name ? result.data.father_name.toUpperCase() : '';
 
-                    if (!cleanName) continue; // Skip if no name extracted
-
                     // 3. Determine if it belongs to the Proprietor or a Guarantor
                     let isProprietorDoc = true;
 
-                    if (currentFormData.proprietorName) {
+                    if (currentFormData.proprietorName && cleanName) {
                         const cleanPropName = currentFormData.proprietorName
                             .split(/\s+/)
-                            .filter(part => part.replace(/\./g, '').length > 1)
+                            .filter(part => part.replace(/\./g, '').length > 0)
                             .join(' ')
                             .toUpperCase();
 
@@ -400,15 +396,14 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
                     if (isProprietorDoc) {
                         // Update Proprietor details
-                        const isProprietorAadhaar = selectedType === 'Proprietor' && docType === 'aadhaar';
                         currentFormData = {
                             ...currentFormData,
                             proprietorTitle: result.data.gender ? (result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.') : currentFormData.proprietorTitle,
                             companyName: result.data.trade_name || currentFormData.companyName,
                             proprietorName: cleanName || currentFormData.proprietorName,
                             fatherOfProprietor: fatherNameExtracted || currentFormData.fatherOfProprietor,
-                            companyAddress: isProprietorAadhaar ? currentFormData.companyAddress : (result.data.business_address ? toTitleCase(result.data.business_address) : currentFormData.companyAddress),
-                            place: isProprietorAadhaar ? currentFormData.place : (result.data.district || currentFormData.place),
+                            companyAddress: (result.data.business_address || result.data.address) ? toTitleCase(result.data.business_address || result.data.address) : currentFormData.companyAddress,
+                            place: result.data.district || currentFormData.place,
                             signatureValid: result.data.signature_valid !== undefined ? result.data.signature_valid : currentFormData.signatureValid,
                         };
                         if (docType === 'pan' && result.data.pan_number) {
@@ -419,7 +414,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                         let guarantorIndex = currentJoinees.findIndex(j => {
                             const cleanJName = (j.name || '')
                                 .split(/\s+/)
-                                .filter(part => part.replace(/\./g, '').length > 1)
+                                .filter(part => part.replace(/\./g, '').length > 0)
                                 .join(' ')
                                 .toUpperCase();
                             return cleanJName && cleanName === cleanJName;
@@ -491,7 +486,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                             const legalName = data.legal_name || data.name || '';
                             const cleanName = legalName
                                 .split(/\s+/)
-                                .filter(part => part.replace(/\./g, '').length > 1)
+                                .filter((part) => part.replace(/\./g, '').length > 0)
                                 .join(' ');
 
                             updatedJoinees[index].name = cleanName ? cleanName.toUpperCase() : updatedJoinees[index].name;
@@ -607,48 +602,47 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                             {options.map((option) => {
                                 const isEnabled = option === 'Proprietor';
                                 return (
-                                <button
-                                    key={option}
-                                    onClick={() => isEnabled && handleSelect(option)}
-                                    disabled={!isEnabled}
-                                    className={`group flex flex-col items-start p-8 rounded-[32px] border-2 transition-all duration-500 text-left relative overflow-hidden ${
-                                        !isEnabled
+                                    <button
+                                        key={option}
+                                        onClick={() => isEnabled && handleSelect(option)}
+                                        disabled={!isEnabled}
+                                        className={`group flex flex-col items-start p-8 rounded-[32px] border-2 transition-all duration-500 text-left relative overflow-hidden ${!isEnabled
                                             ? 'border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/30 opacity-50 cursor-not-allowed select-none'
                                             : selectedType === option
                                                 ? `${colorClasses[typeConfig[option].color].border} bg-white dark:bg-[#0f172b] shadow-2xl ${colorClasses[typeConfig[option].color].shadow} scale-[1.02] cursor-pointer`
                                                 : `border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172b] ${colorClasses[typeConfig[option].color].hoverBorder} ${colorClasses[typeConfig[option].color].darkHoverBorder} hover:bg-slate-50 dark:hover:bg-slate-800/20 cursor-pointer`
-                                    }`}
-                                >
-                                    {/* Coming Soon badge for disabled options */}
-                                    {!isEnabled && (
-                                        <span className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
-                                            Coming Soon
-                                        </span>
-                                    )}
+                                            }`}
+                                    >
+                                        {/* Coming Soon badge for disabled options */}
+                                        {!isEnabled && (
+                                            <span className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                                                Coming Soon
+                                            </span>
+                                        )}
 
-                                    {/* Icon */}
-                                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-500 ${selectedType === option
-                                        ? `${colorClasses[typeConfig[option].color].bg} text-white`
-                                        : `bg-slate-100 dark:bg-slate-800 text-slate-400 ${isEnabled ? `${colorClasses[typeConfig[option].color].hoverBg} ${colorClasses[typeConfig[option].color].darkHoverBg} group-hover:${colorClasses[typeConfig[option].color].text}` : ''}`
-                                        }`}>
-                                        <span className="material-symbols-outlined text-3xl">
-                                            {typeConfig[option].icon}
-                                        </span>
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <h3 className={`text-xl font-black tracking-tight transition-colors ${selectedType === option ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                                        {/* Icon */}
+                                        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-500 ${selectedType === option
+                                            ? `${colorClasses[typeConfig[option].color].bg} text-white`
+                                            : `bg-slate-100 dark:bg-slate-800 text-slate-400 ${isEnabled ? `${colorClasses[typeConfig[option].color].hoverBg} ${colorClasses[typeConfig[option].color].darkHoverBg} group-hover:${colorClasses[typeConfig[option].color].text}` : ''}`
                                             }`}>
-                                            {option}
-                                        </h3>
-                                        <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                                            {typeConfig[option].desc}
-                                        </p>
-                                    </div>
+                                            <span className="material-symbols-outlined text-3xl">
+                                                {typeConfig[option].icon}
+                                            </span>
+                                        </div>
 
-                                    <div className={`absolute -bottom-6 -right-6 w-24 h-24 rounded-full transition-all duration-700 blur-3xl ${selectedType === option ? `${colorClasses[typeConfig[option].color].bg}/20` : 'bg-transparent'
-                                        }`}></div>
-                                </button>
+                                        <div className="space-y-1">
+                                            <h3 className={`text-xl font-black tracking-tight transition-colors ${selectedType === option ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                {option}
+                                            </h3>
+                                            <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                                                {typeConfig[option].desc}
+                                            </p>
+                                        </div>
+
+                                        <div className={`absolute -bottom-6 -right-6 w-24 h-24 rounded-full transition-all duration-700 blur-3xl ${selectedType === option ? `${colorClasses[typeConfig[option].color].bg}/20` : 'bg-transparent'
+                                            }`}></div>
+                                    </button>
                                 );
                             })}
                         </div>
@@ -845,8 +839,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
                                                                 {openDropdownIdx === idx && (() => {
                                                                     const searchVal = (loan.lenderName || '').trim();
-                                                                    const isExactMatch = lenderOptions.some(option => 
-                                                                        option.toUpperCase() === searchVal.toUpperCase() || 
+                                                                    const isExactMatch = lenderOptions.some(option =>
+                                                                        option.toUpperCase() === searchVal.toUpperCase() ||
                                                                         cleanDisplayLenderName(option).toUpperCase() === searchVal.toUpperCase()
                                                                     );
                                                                     const filteredOptions = (searchVal && !isExactMatch)

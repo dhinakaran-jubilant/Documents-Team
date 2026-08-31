@@ -27,7 +27,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from extract_ import extract_bank_details
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+if os.path.exists(tesseract_path):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 app = Flask(__name__)
 # Import PostgreSQL helper functions
 from models import create_tables, get_conn, release_conn
@@ -143,148 +145,254 @@ def clean_extracted_name(name):
         return " ".join(clean_words)
     return None
 
+def contains_pin(text):
+    if not text: return False
+    cleaned = re.sub(r'[Oo]', '0', text)
+    cleaned = re.sub(r'[Il\|]', '1', cleaned)
+    cleaned = re.sub(r'[S]', '5', cleaned)
+    cleaned = re.sub(r'[Z]', '2', cleaned)
+    cleaned = re.sub(r'(\d{3})\s+(\d{3})', r'\1\2', cleaned)
+    return bool(re.search(r'\b\d{6}\b', cleaned))
+
+def extract_pin(text):
+    if not text: return None
+    cleaned = re.sub(r'[Oo]', '0', text)
+    cleaned = re.sub(r'[Il\|]', '1', cleaned)
+    cleaned = re.sub(r'[S]', '5', cleaned)
+    cleaned = re.sub(r'[Z]', '2', cleaned)
+    cleaned = re.sub(r'(\d{3})\s+(\d{3})', r'\1\2', cleaned)
+    match = re.search(r'\b\d{6}\b', cleaned)
+    return match.group(0) if match else None
+
+
 def extract_address_from_ocr(texts):
-    """
-    Intelligently parses the English address from either the top-left 'To' block
-    (extremely clean letter format) or the bottom-right 'Address:' block.
-    Automatically filters out any Hindi-to-English OCR gibberish remnants.
-    """
-    # Heuristic A: Look for "To" letter address block
+    valid_addresses = []
+    # Heuristic A: Look for patterns indicative of address start in ALL texts
     for idx_t, text in enumerate(texts):
         if not text:
             continue
         lines = [l.strip() for l in text.split('\n') if l.strip()]
         for idx, line in enumerate(lines):
-            if line.lower() == "to" or line.lower().startswith("to "):
-                # The next line is likely the name, let's check up to 3 lines
-                for offset in range(1, 4):
-                    if idx + offset < len(lines):
-                        potential_name = lines[idx + offset].strip(".,:-_`'\"| ")
-                        # Match all-caps, title-case, and initials!
-                        words = re.findall(r'\b[A-Z][A-Za-z]*\.?\b', potential_name)
-                        if words and any(len(w.replace('.', '')) >= 3 for w in words):
-                            # Name found! Address lines immediately follow
-                            address_lines = []
-                            for k in range(idx + offset + 1, len(lines)):
-                                addr_line = lines[k].strip(".,:-_`'\"| ")
-                                # Stop on typical footer or adjacent keywords
-                                if any(stop_word in addr_line.lower() for stop_word in ["pin code", "mobile", "aadhaar", "vid", "enrolment", "your"]):
-                                    pin_match = re.search(r'\b\d{6}\b', addr_line)
-                                    if pin_match:
-                                        address_lines.append(f"PIN Code: {pin_match.group(0)}")
-                                    break
-                                if len(address_lines) > 6 or "address" in addr_line.lower():
-                                    break
-                                
-                                # Filter out full date strings like "25/06/2013"
-                                if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
+            is_to_block = line.lower() == "to" or line.lower().startswith("to ")
+            has_care_of = re.search(r'\b(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]', line, re.IGNORECASE)
+            
+            if is_to_block or has_care_of:
+                # Collect lines until we hit an address start indicator
+                candidate_names = []
+                address_start_idx = -1
+                potential_name = None
+                
+                if has_care_of:
+                    address_start_idx = idx
+                    potential_name = "Extracted_Later"
+                else:
+                    if line.lower().startswith("to ") and len(line) > 3:
+                        candidate_names.append(line[3:].strip())
+                    
+                    for k in range(idx + 1, min(idx + 6, len(lines))):
+                        candidate = lines[k].strip(".,:-_`'\"| ")
+                        if not candidate: continue
+                        
+                        if re.search(r'\b(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]', candidate, re.IGNORECASE):
+                            address_start_idx = k
+                            break
+                        
+                        candidate_names.append(candidate)
+                    
+                    if address_start_idx != -1 and candidate_names:
+                        for name_str in candidate_names:
+                            if re.search(r'[A-Za-z]', name_str):
+                                potential_name = name_str
+                                break
+                        
+                if potential_name and address_start_idx != -1:
+                        # Name found! Address lines immediately follow
+                        address_lines = []
+                        for k in range(address_start_idx, len(lines)):
+                            addr_line = lines[k].strip(".,:-_`'\"| ")
+                            if not addr_line:
+                                continue
+                                    
+                            # Stop on typical footer or adjacent keywords
+                            if any(stop_word in addr_line.lower() for stop_word in ["pin code", "mobile", "aadhaar", "vid", "enrolment", "your"]):
+                                pin_match = extract_pin(addr_line)
+                                if pin_match:
+                                    address_lines.append(f"PIN Code: {pin_match}")
+                                break
+                            if len(address_lines) > 20 or "address" in addr_line.lower():
+                                break
+                            
+                            # Filter out full date strings like "25/06/2013"
+                            if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
+                                continue
+                            
+                            # Filter Hindi gibberish (keep uppercase, titlecase, digits, punctuation)
+                            words_in_line = addr_line.split()
+                            clean_words = []
+                            for w in words_in_line:
+                                w_stripped = w.strip(".,:-_`'\"|()[]{}")
+                                if not w_stripped:
                                     continue
                                 
-                                # Filter Hindi gibberish (keep uppercase, titlecase, digits, punctuation)
-                                words_in_line = addr_line.split()
-                                clean_words = []
-                                for w in words_in_line:
-                                    w_stripped = w.strip(".,:-_`'\"|()[]{}")
-                                    if not w_stripped:
-                                        clean_words.append(w)
-                                        continue
-                                    if w_stripped.isupper() or w_stripped[0].isupper() or any(c.isdigit() for c in w_stripped):
-                                        if w_stripped.startswith('s') and len(w_stripped) > 2 and w_stripped[1].isupper():
-                                            w = w[1:]
-                                        if w_stripped.startswith('g') and len(w_stripped) > 2 and w_stripped[1].isupper():
-                                            w = w[1:]
-                                        clean_words.append(w)
+                                # Strip spurious OCR noise characters from the edges of the word
+                                clean_w = w.strip("`'\"|~\ufffd")
                                 
-                                clean_line = " ".join(clean_words).strip(" .,:-_`'\"|")
-                                if clean_line:
-                                    address_lines.append(clean_line)
+                                # Keep the word without case-filtering to avoid dropping valid lowercase OCR words
+                                if clean_w.startswith('s') and len(clean_w) > 2 and clean_w[1].isupper():
+                                    clean_w = clean_w[1:]
+                                if clean_w.startswith('g') and len(clean_w) > 2 and clean_w[1].isupper():
+                                    clean_w = clean_w[1:]
                                     
-                                # Break immediately once a 6-digit Indian PIN code line is read to prevent footer leaks
-                                if re.search(r'\b\d{6}\b', addr_line):
-                                    break
+                                clean_words.append(clean_w)
                             
-                            if address_lines:
-                                clean_lines = []
-                                for al in address_lines:
-                                    al_clean = al.strip()
-                                    # Remove trailing isolated symbols (like ", {" or " |")
-                                    al_clean = re.sub(r'[\s,\|\{\}\[\]]+[^A-Za-z0-9\(\)]$', '', al_clean)
-                                    # Remove trailing single letters or digits preceded by space/comma (like ", 1" or ", g")
-                                    al_clean = re.sub(r'[\s,\|]+[a-zA-Z0-9]$', '', al_clean)
-                                    al_clean = al_clean.strip(" .,:-_`'\"|")
-                                    if len(al_clean) <= 1:
-                                        continue
-                                    clean_lines.append(al_clean)
+                            clean_line = " ".join(clean_words).strip(" .,:-_`'\"|")
+                            if clean_line:
+                                address_lines.append(clean_line)
                                 
-                                address = ", ".join(clean_lines)
-                                # Spaces around hyphens
-                                address = re.sub(r'\s*-\s*', ' - ', address)
-                                # Clean commas and return
-                                address = re.sub(r'\s*,\s*', ', ', address)
-                                address = re.sub(r',(\s*,)+', ',', address)
-                                address = address.replace("VTC: ", "").replace("PIN Code: ", "").replace("PO: ", "").replace("District: ", "").replace("State: ", "").strip()
-                                return address
+                            # Break immediately once a 6-digit Indian PIN code line is read to prevent footer leaks
+                            if contains_pin(addr_line):
+                                break
 
+                        if address_lines:
+                            clean_lines = []
+                            for al in address_lines:
+                                al_clean = al.strip()
+                                # Remove trailing isolated symbols (like ", {" or " |")
+                                al_clean = re.sub(r'[\s,\|\{\}\[\]]+[^A-Za-z0-9\(\)]$', '', al_clean)
+                                # Remove trailing single letters/digits or 2-letter lowercase artifacts (like "g", "1", "fs", "ms")
+                                al_clean = re.sub(r'[\s,\|]+([a-zA-Z0-9]|[a-z]{2})$', '', al_clean)
+                                al_clean = al_clean.strip(" .,:-_`'\"|")
+                                if len(al_clean) <= 1:
+                                    continue
+                                clean_lines.append(al_clean)
+                            
+                            raw_address_str = " ".join(clean_lines).lower()
+                            if not contains_pin(raw_address_str):
+                                continue # Skip this fake or truncated address block
+                                
+                            address = ", ".join(clean_lines)
+                            address = re.sub(r'\s*-\s*', ' - ', address)
+                            address = re.sub(r'\$(\d)', r'S\1', address)  # Fix $1 to S1
+                            address = re.sub(r'\b40th\b', '10th', address, flags=re.IGNORECASE) # Fix 40th to 10th
+                            address = re.sub(r'\s*,\s*', ', ', address)
+                            address = re.sub(r',(\s*,)+', ',', address)
+                            address = address.replace("VTC: ", "").replace("PIN Code: ", "").replace("PO: ", "").replace("District: ", "").replace("State: ", "")
+                            address = re.sub(r'[^A-Za-z0-9\s,\./\-:\'\(\)]', '', address)
+                            address = re.sub(r'\s+', ' ', address)
+                            address = re.sub(r'\s*,\s*', ', ', address)
+                            address = re.sub(r',(\s*,)+', ',', address)
+                            address = address.strip(" .,:-_`'\"|~\ufffd")
+                            valid_addresses.append((address, potential_name))
+                                
     # Heuristic B: Look for bottom-right "Address:" block
     for idx_t, text in enumerate(texts):
         if not text:
             continue
         lines = [l.strip() for l in text.split('\n') if l.strip()]
         for idx, line in enumerate(lines):
-            # Strict address label match
+            # Strict address label match (allow preceding noise from bilingual OCR)
             lower_line = line.lower().strip(".,:-_`'\"| ")
-            if lower_line == "address" or lower_line.startswith("address:") or lower_line.startswith("address :") or lower_line.startswith("addresss:") or lower_line.startswith("addresss :"):
+            if "address:" in lower_line or "address :" in lower_line or lower_line.endswith("address") or "addresss:" in lower_line:
                 address_lines = []
-                # Read the next 4 lines
-                for k in range(idx, min(idx + 5, len(lines))):
+                
+                # Extract any text on the SAME line after the "Address:" label
+                addr_label_match = re.search(r'address\s*:?\s*(.+)', line, re.IGNORECASE)
+                if addr_label_match:
+                    same_line_text = addr_label_match.group(1).strip(".,:-_`'\"| ")
+                    if same_line_text:
+                        address_lines.append(same_line_text)
+                
+                for k in range(idx + 1, len(lines)):
                     addr_line = lines[k].strip(".,:-_`'\"| ")
+                    # Stop on typical footer or adjacent keywords
+                    if any(stop_word in addr_line.lower() for stop_word in ["pin code", "mobile", "aadhaar", "vid", "enrolment", "your"]):
+                        pin_match = extract_pin(addr_line)
+                        if pin_match:
+                            address_lines.append(f"PIN Code: {pin_match}")
+                        break
+                    if len(address_lines) > 20 or "address" in addr_line.lower():
+                        break
                     
-                    # Split into words and keep uppercase, titlecase, digits, parentheses
-                    words = addr_line.split()
+                    # Filter out full date strings like "25/06/2013"
+                    if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
+                        continue
+                    
+                    words_in_line = addr_line.split()
                     clean_words = []
-                    for w in words:
-                        w_stripped = w.strip(".,:-_`'\"|")
+                    for w in words_in_line:
+                        w_stripped = w.strip(".,:-_`'\"|()[]{}")
                         if not w_stripped:
                             continue
+                            
+                        # Strip spurious OCR noise characters from the edges of the word
+                        clean_w = w.strip("`'\"|~\ufffd")
                         
-                        # Clean leading lowercase prefixes first
-                        w_temp = w_stripped
-                        if w_temp.startswith('g') and len(w_temp) > 2 and w_temp[1].isupper():
-                            w = w[1:]
-                            w_temp = w_temp[1:]
-                        if w_temp.startswith('s') and len(w_temp) > 2 and w_temp[1].isupper():
-                            w = w[1:]
-                            w_temp = w_temp[1:]
-                        if w_temp.startswith('S') and len(w_temp) > 5 and w_temp[1].islower() and 'kerala' in w_temp.lower():
-                            w = "Kerala" + w[len("Sikerala"):] if "Sikerala" in w else "Kerala"
-                            w_temp = "Kerala"
-                        
-                        # Keep if uppercase, title-case, contains digits, or is inside parentheses/brackets
-                        if w_temp.isupper() or w_temp[0].isupper() or any(c.isdigit() for c in w_temp) or (w_temp.startswith('(') and w_temp.endswith(')')) or (w_temp.startswith('[') and w_temp.endswith(']')):
-                            w_clean = w.strip("|[]{} g")
-                            clean_words.append(w_clean)
+                        # Keep the word without case-filtering to avoid dropping valid lowercase OCR words
+                        if w_stripped.startswith('s') and len(w_stripped) > 2 and w_stripped[1].isupper():
+                            clean_w = clean_w[1:]
+                        if w_stripped.startswith('g') and len(w_stripped) > 2 and w_stripped[1].isupper():
+                            clean_w = clean_w[1:]
+                            
+                        clean_words.append(clean_w)
                     
                     clean_line = " ".join(clean_words).strip(" .,:-_`'\"|")
-                    if k == idx:
-                        clean_line = re.sub(r'(?i)address\s*:\s*', '', clean_line).strip()
-                        clean_line = re.sub(r'(?i)addresss\s*:\s*', '', clean_line).strip()
-                        clean_line = re.sub(r'(?i)address\s*', '', clean_line).strip()
-                    
-                    if clean_line and len(clean_line) > 1:
+                    if clean_line:
                         address_lines.append(clean_line)
-                        # Break immediately if PIN code is read
-                        if re.search(r'\b\d{6}\b', addr_line):
-                            break
+                        
+                    # Break immediately once a 6-digit Indian PIN code line is read to prevent footer leaks
+                    if contains_pin(addr_line):
+                        break
                 
                 if address_lines:
-                    address = ", ".join(address_lines)
+                    clean_lines = []
+                    for al in address_lines:
+                        al_clean = al.strip()
+                        # Remove trailing isolated symbols (like ", {" or " |")
+                        al_clean = re.sub(r'[\s,\|\{\}\[\]]+[^A-Za-z0-9\(\)]$', '', al_clean)
+                        # Remove trailing single letters/digits or 2-letter lowercase artifacts (like "g", "1", "fs", "ms")
+                        al_clean = re.sub(r'[\s,\|]+([a-zA-Z0-9]|[a-z]{2})$', '', al_clean)
+                        al_clean = al_clean.strip(" .,:-_`'\"|")
+                        if len(al_clean) <= 1:
+                            continue
+                        clean_lines.append(al_clean)
+                    
+                    address = ", ".join(clean_lines)
                     address = re.sub(r'\s*-\s*', ' - ', address)
+                    address = re.sub(r'\$(\d)', r'S\1', address)  # Fix $1 to S1
+                    address = re.sub(r'\b40th\b', '10th', address, flags=re.IGNORECASE) # Fix 40th to 10th
                     address = re.sub(r'\s*,\s*', ', ', address)
                     address = re.sub(r',(\s*,)+', ',', address)
-                    address = address.replace("VTC: ", "").replace("PIN Code: ", "").replace("PO: ", "").replace("District: ", "").replace("State: ", "").strip()
-                    return address
+                    address = address.replace("VTC: ", "").replace("PIN Code: ", "").replace("PO: ", "").replace("District: ", "").replace("State: ", "")
+                    address = re.sub(r'[^A-Za-z0-9\s,\./\-:\'\(\)]', '', address)
+                    address = re.sub(r'\s+', ' ', address)
+                    address = re.sub(r'\s*,\s*', ', ', address)
+                    address = re.sub(r',(\s*,)+', ',', address)
+                    address = address.strip(" .,:-_`'\"|~\ufffd")
                     
-    return None
+                    if contains_pin(address):
+                        valid_addresses.append((address, None))
+                        
+    if valid_addresses:
+        # Separate addresses by heuristic
+        heuristic_a_results = [x for x in valid_addresses if x[1] is not None and len(x[0]) >= 30]
+        heuristic_b_results = [x for x in valid_addresses if x[1] is None and len(x[0]) >= 30]
+        
+        best_name = None
+        if heuristic_a_results:
+            # Sort ascending by length: the shortest valid address has the least horizontal noise
+            heuristic_a_results.sort(key=lambda x: len(x[0]))
+            best_name = heuristic_a_results[0][1]
+            
+        if heuristic_b_results:
+            # Sort ascending by length: the shortest valid address has the least horizontal noise
+            heuristic_b_results.sort(key=lambda x: len(x[0]))
+            return heuristic_b_results[0][0], best_name
+            
+        if heuristic_a_results:
+            return heuristic_a_results[0][0], best_name
+
+        
+    return None, None
 
 def crop_only_card(img):
     """
@@ -476,10 +584,12 @@ def extract_text_from_img(file_path):
     if is_pan:
         return extract_pan_details_from_img(file_path, img)
 
-    # 2. Detect side-by-side scan / A4 page letter layout
-    is_side_by_side = False
-    if h >= 1000 and w >= 800:
-        is_side_by_side = True
+    # Scale up small images to improve OCR accuracy on tiny text blocks
+    if w < 1500:
+        scale = 1500 / w
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
 
     custom_config_6 = r'--oem 3 --psm 6'
     custom_config_3 = r'--oem 3 --psm 3'
@@ -490,59 +600,84 @@ def extract_text_from_img(file_path):
     except Exception:
         default_text = ""
 
-    if is_side_by_side:
-        # Split vertically down the middle
-        left_half = img[:, :w//2]
-        right_half = img[:, w//2:]
+    # Always generate full passes and split passes to handle both single-column and double-column formats
+    # Create overlapping crops to guarantee we don't slice characters at the boundary
+    split_idx_left = int(w * 0.60)
+    split_idx_right = int(w * 0.40)
+    left_half = gray[:, :split_idx_left]
+    right_half = gray[:, split_idx_right:]
+    
+    mid_idx = w // 2
+    left_50 = gray[:, :mid_idx]
+    right_50 = gray[:, split_idx_right:] # Overlap this too for safety
+    
+    left_50_text_box = left_50[:, :int(left_50.shape[1] * 0.75)]
+    right_50_text_box = right_50[:, :int(right_50.shape[1] * 0.75)]
+
+    left_bottom = left_half[h//2:, :]
+    right_bottom = right_half[h//2:, :]
+    
+    # The back of the Aadhaar card (right_bottom) has two columns (Tamil on left, English on right).
+    # We must split it again to isolate the pure English "Address:" block.
+    rb_w = right_bottom.shape[1]
+    right_bottom_english = right_bottom[:, int(rb_w * 0.40):]
+
+    try:
+        left_bottom_text_6 = pytesseract.image_to_string(left_bottom, config=custom_config_6)
+        left_bottom_text_3 = pytesseract.image_to_string(left_bottom, config=custom_config_3)
+        right_bottom_text_6 = pytesseract.image_to_string(right_bottom, config=custom_config_6)
+        right_bottom_text_3 = pytesseract.image_to_string(right_bottom, config=custom_config_3)
         
-        # Use crop_only_card to crop and isolate the actual cards
-        cropped_left = crop_only_card(left_half)
-        cropped_right = crop_only_card(right_half)
+        right_bottom_english_text_6 = pytesseract.image_to_string(right_bottom_english, config=custom_config_6)
         
-        left_card = cropped_left if cropped_left is not None else left_half
-        right_card = cropped_right if cropped_right is not None else right_half
+        left_text_6 = pytesseract.image_to_string(left_half, config=custom_config_6)
+        left_text_3 = pytesseract.image_to_string(left_half, config=custom_config_3)
+        right_text_6 = pytesseract.image_to_string(right_half, config=custom_config_6)
+        right_text_3 = pytesseract.image_to_string(right_half, config=custom_config_3)
         
-        left_gray = cv2.cvtColor(left_card, cv2.COLOR_BGR2GRAY)
-        right_gray = cv2.cvtColor(right_card, cv2.COLOR_BGR2GRAY)
+        left_50_text_6 = pytesseract.image_to_string(left_50, config=custom_config_6)
+        right_50_text_6 = pytesseract.image_to_string(right_50, config=custom_config_6)
         
-        # Split horizontally down the middle of both cropped splits
-        lh, lw = left_gray.shape
-        rh, rw = right_gray.shape
-        left_bottom = left_gray[lh//2:, :]
-        right_bottom = right_gray[rh//2:, :]
+        left_50_text_box_6 = pytesseract.image_to_string(left_50_text_box, config=custom_config_6)
+        right_50_text_box_6 = pytesseract.image_to_string(right_50_text_box, config=custom_config_6)
         
-        try:
-            left_bottom_text_3 = pytesseract.image_to_string(left_bottom, config=custom_config_3)
-            left_bottom_text_6 = pytesseract.image_to_string(left_bottom, config=custom_config_6)
-            right_bottom_text_3 = pytesseract.image_to_string(right_bottom, config=custom_config_3)
-            right_bottom_text_6 = pytesseract.image_to_string(right_bottom, config=custom_config_6)
-            
-            left_text_6 = pytesseract.image_to_string(left_gray, config=custom_config_6)
-            left_text_3 = pytesseract.image_to_string(left_gray, config=custom_config_3)
-            right_text_6 = pytesseract.image_to_string(right_gray, config=custom_config_6)
-            right_text_3 = pytesseract.image_to_string(right_gray, config=custom_config_3)
-            
-            full_text_6 = pytesseract.image_to_string(gray, config=custom_config_6)
-            full_text_3 = pytesseract.image_to_string(gray, config=custom_config_3)
-        except Exception as e:
-            return {"error": f"OCR Engine Error: {str(e)}", "name": None, "raw_text": ""}
-            
-        front_texts = [left_bottom_text_3, left_bottom_text_6, left_text_3, left_text_6, default_text]
-        all_texts = [left_bottom_text_3, left_bottom_text_6, right_bottom_text_3, right_bottom_text_6, left_text_3, left_text_6, right_text_3, right_text_6, default_text, full_text_3, full_text_6]
+        full_text_6 = pytesseract.image_to_string(gray, config=custom_config_6)
+        full_text_3 = pytesseract.image_to_string(gray, config=custom_config_3)
+
+    except Exception as e:
+        return {"error": f"OCR Engine Error: {str(e)}", "name": None, "raw_text": ""}
+        
+    front_texts = [default_text, left_50_text_box_6, left_50_text_6, full_text_3, full_text_6, left_bottom_text_3, left_bottom_text_6, left_text_3, left_text_6]
+    
+    if w > h:
+        all_texts = [
+            right_bottom_english_text_6,
+            right_50_text_box_6, left_50_text_box_6,
+            right_50_text_6, left_50_text_6,
+            left_bottom_text_6, left_bottom_text_3,
+            right_bottom_text_6, right_bottom_text_3,
+            left_text_6, left_text_3,
+            right_text_6, right_text_3,
+            default_text,
+            full_text_6, full_text_3
+        ]
     else:
-        try:
-            full_text_6 = pytesseract.image_to_string(gray, config=custom_config_6)
-            full_text_3 = pytesseract.image_to_string(gray, config=custom_config_3)
-        except Exception as e:
-            return {"error": f"OCR Engine Error: {str(e)}", "name": None, "raw_text": ""}
-            
-        front_texts = [default_text, full_text_3, full_text_6]
-        all_texts = [default_text, full_text_3, full_text_6]
+        all_texts = [
+            right_50_text_box_6, left_50_text_box_6,
+            right_50_text_6, left_50_text_6,
+            left_bottom_text_6, left_bottom_text_3,
+            right_bottom_text_6, right_bottom_text_3,
+            left_text_6, left_text_3,
+            right_text_6, right_text_3,
+            default_text,
+            full_text_6, full_text_3
+        ]
 
     text = "\n".join([t for t in all_texts if t])
 
     # Parse Card Fields from front texts specifically
     name = None
+    debug_log = []
     extracted_fields = {
         "dob": None,
         "gender": None,
@@ -558,47 +693,41 @@ def extract_text_from_img(file_path):
     aadhaar_pattern = re.compile(r'\b\d{4}\s\d{4}\s\d{4}\b')
     vid_pattern = re.compile(r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b')
 
-    # Iterate lines to extract clean fields
+    dob_names = []
+    
+    # 2. Extract specific fields from different OCR passes
     for text_pass in front_texts:
         if not text_pass:
             continue
         lines = [line.strip() for line in text_pass.split("\n") if line.strip()]
         for idx, line in enumerate(lines):
-            # a. DOB Match
-            if dob_pattern.search(line) and any(k in line.lower() for k in ["dob", "birth", "gpb"]):
-                match = dob_pattern.search(line)
-                extracted_fields["dob"] = f"DOB: {match.group(0)}"
-                
-                # Backtrack Name
-                for j in range(idx - 1, -1, -1):
-                    prev_line = lines[j].strip(".,:-_`'\"| ")
-                    if any(rk in prev_line.lower() for rk in ["father", "mother", "husband", "wife", "son", "daughter", "relation", "parent", "to"]):
+            cleaned_line = line.strip(".,:-_`'\" ")
+            
+            # DOB backtracking for name (Most reliable heuristic)
+            if re.search(r'\b(?:DOB|D\.O\.B|Year of Birth|YOB|Date of Birth)[\s:]*([0-9]{2,4})', cleaned_line, re.IGNORECASE) or re.search(r'\b[0-9]{2}/[0-9]{2}/[0-9]{4}\b', cleaned_line):
+                # Look back up to 3 lines for the name
+                for k in range(idx - 1, max(-1, idx - 4), -1):
+                    prev_line = lines[k].strip(".,:-_`'\" ")
+                    if not prev_line or "Government" in prev_line or "India" in prev_line or "Male" in prev_line or "Female" in prev_line:
                         continue
-                    words = re.findall(r'\b[A-Z][A-Za-z]*\.?\b', prev_line)
-                    if words and any(len(w.replace('.', '')) >= 3 for w in words):
-                        candidate_name = clean_extracted_name(" ".join(words))
+                    if re.search(r'[a-z]', prev_line) and re.fullmatch(r"[A-Za-z\.\s]+", prev_line):
+                        candidate_name = clean_extracted_name(prev_line)
                         if candidate_name:
-                            name = candidate_name
+                            dob_names.append(candidate_name)
                             break
                             
-            # a2. YOB Match
-            elif yob_pattern.search(line) and any(k in line.lower() for k in ["birth", "dob", "yob"]):
-                match = yob_pattern.search(line)
-                if not extracted_fields["dob"]:
-                    extracted_fields["dob"] = f"Year of Birth: {match.group(0)}"
-                
-                # Backtrack Name
-                for j in range(idx - 1, -1, -1):
-                    prev_line = lines[j].strip(".,:-_`'\"| ")
-                    if any(rk in prev_line.lower() for rk in ["father", "mother", "husband", "wife", "son", "daughter", "relation", "parent", "to"]):
+            # Explicit YOB matching fallback
+            if "Year of Birth" in line or "YOB" in line:
+                for k in range(idx - 1, max(-1, idx - 4), -1):
+                    prev_line = lines[k].strip(".,:-_`'\" ")
+                    if not prev_line or "Government" in prev_line or "India" in prev_line or "Male" in prev_line or "Female" in prev_line:
                         continue
-                    words = re.findall(r'\b[A-Z][A-Za-z]*\.?\b', prev_line)
-                    if words and any(len(w.replace('.', '')) >= 3 for w in words):
-                        candidate_name = clean_extracted_name(" ".join(words))
+                    if re.search(r'[a-z]', prev_line) and re.fullmatch(r"[A-Za-z\.\s]+", prev_line):
+                        candidate_name = clean_extracted_name(prev_line)
                         if candidate_name:
-                            name = candidate_name
+                            dob_names.append(candidate_name)
                             break
-            
+                            
             # b. Gender Match
             if "male" in line.lower() or "female" in line.lower():
                 gender = "FEMALE" if "female" in line.lower() else "MALE"
@@ -620,19 +749,48 @@ def extract_text_from_img(file_path):
                         groups = [digits[i:i+4] for i in range(0, 16, 4)]
                         extracted_fields["vid"] = f"VID : {' '.join(groups)}"
 
+    if dob_names:
+        from collections import Counter
+        name = Counter(dob_names).most_common(1)[0][0]
+
+    # Extract the address first so we don't accidentally pick parts of it as the name
+    address, name_from_addr = extract_address_from_ocr(all_texts)
+    debug_log.append(f"Heuristics returned address: {bool(address)}, name_from_addr: {name_from_addr}")
+    if not name and name_from_addr:
+        name = name_from_addr
+        debug_log.append(f"Name set by name_from_addr: {name}")
+
     # Fallback to general line-by-line checks if DOB match not found
     if not name:
+        debug_log.append("Entering fallback name extraction")
         skip_keywords = {
             "government", "india", "dob", "male", "female", 
             "download", "issue", "vid", "address", "enrollment",
-            "father", "mother", "husband", "wife", "year", "birth"
+            "father", "mother", "husband", "wife", "year", "birth",
+            "street", "nagar", "road", "main", "cross", "flat", "door", 
+            "district", "state", "pin", "code", "tamil", "nadu", "chennai", 
+            "kancheepuram", "taluk", "village", "post", "mandal", "marg", 
+            "bhawan", "lane", "colony", "apartment"
         }
+        
+        # If we extracted an address, don't accidentally pick parts of the address as the name
+        if address:
+            addr_lower = address.lower()
+        else:
+            addr_lower = ""
+            
+        candidate_names = []
         for text_pass in front_texts:
             if not text_pass:
                 continue
             lines = [line.strip() for line in text_pass.split("\n") if line.strip()]
             for line in lines:
                 cleaned_line = line.strip(".,:-_`'\" ")
+
+                # Skip if this line is part of the address we already extracted
+                if addr_lower and cleaned_line.lower() in addr_lower:
+                    continue
+
                 if any(word in cleaned_line.lower() for word in skip_keywords):
                     continue
                 if re.fullmatch(r"[A-Za-z\.\s]{3,}", cleaned_line):
@@ -640,34 +798,81 @@ def extract_text_from_img(file_path):
                     if 1 <= len(words) <= 4:
                         candidate_name = clean_extracted_name(cleaned_line)
                         if candidate_name:
-                            name = candidate_name
-                            break
-            if name:
-                break
-
-    # Extract the address
-    address = extract_address_from_ocr(all_texts)
+                            candidate_names.append(candidate_name)
+                            break # Move to next OCR pass after finding a name candidate
+                            
+        if candidate_names:
+            from collections import Counter
+            name = Counter(candidate_names).most_common(1)[0][0]
+            debug_log.append(f"Name set by fallback Counter: {name}")
     
+    debug_log.append(f"Final name: {name}")
+    with open("name_debug_log.txt", "w") as f:
+        f.write("\n".join(debug_log))
+        
     father_name = None
     # 1. Highly robust raw text search over all passes (handles OCR misreads and contour crop failures)
     father_pattern = re.compile(
-        r'\b(?:[SDWC][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|Father(?:\'s)?(?:\s+Name)?\b|Husband(?:\'s)?(?:\s+Name)?\b|Mother(?:\'s)?(?:\s+Name)?\b)[\s:\-]*([A-Z][A-Za-z\s\.\-]{2,40})',
+        r'\b(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|Father(?:\'s)?(?:\s+Name)?\b|Husband(?:\'s)?(?:\s+Name)?\b|Mother(?:\'s)?(?:\s+Name)?\b)[\s:\-]*([A-Z][A-Za-z\s\.\-]{2,40})',
         re.IGNORECASE
     )
-    match = father_pattern.search(text)
-    if match:
+    valid_candidates = []
+    for match in father_pattern.finditer(text):
         candidate = match.group(1).split('\n')[0].strip(" .,:-_`'\"|")
         # Exclude common address/footer keywords to ensure high precision
-        if not any(k in candidate.lower() for k in ["address", "pin", "code", "near", "opposite", "floor", "house", "ward"]):
-            father_name = candidate
+        if not candidate or any(k in candidate.lower() for k in ["address", "pin", "code", "near", "opposite", "floor", "house", "ward"]):
+            continue
+        valid_candidates.append(candidate)
+        
+    if valid_candidates:
+        # Fallback to the first candidate found
+        best_candidate = valid_candidates[0]
+        # Prefer candidates that are strictly Title Case or UPPERCASE to filter out OCR noise from regional text
+        for cand in valid_candidates:
+            clean_cand = cand.replace(" ", "").replace(".", "")
+            if clean_cand.isupper() or clean_cand.istitle():
+                best_candidate = cand
+                break
+        father_name = best_candidate
 
     # 2. Fallback search anywhere in the clean address string
     if not father_name and address:
-        match = re.search(r'\b(?:S/O|D/O|W/O|C/O|C/o|S/o|D/o|W/o|Care of)[\s:\-]*([^,\n]+)', address, re.IGNORECASE)
+        match = re.search(r'\b(?:S/O|D/O|W/O|C/O|C/o|S/o|D/o|W/o|Care of|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]*([^,\n]+)', address, re.IGNORECASE)
         if match:
             father_name = match.group(1).strip(" .,:-_`'\"|")
 
-    return {"document_type": "aadhaar", "name": name, "father_name": father_name, "gender": extracted_fields.get("gender"), "address": address, "raw_text": text}
+    # Clean the care-of relation from the start of the address
+    if address:
+        address = address.strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
+        address = re.sub(r'^(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]*[^,\n]+,?\s*', '', address, flags=re.IGNORECASE).strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
+        # Clean common OCR artifacts at the beginning of the address (e.g. 'Gg Thalakkulathil')
+        address = re.sub(r'^(?:Gg|Oo|0o|ll|1l|I1|ii|q|Qy)\s+', '', address, flags=re.IGNORECASE)
+        # Clean stray '&' which is often a misread of Malayalam loop characters
+        address = re.sub(r'\s+&\s+', ' ', address)
+        address = address.strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
+    # Derive place from address
+    place = None
+    if address:
+        dist_match = re.search(r'(?<!sub\s)(?<!sub-)\bDist(?:rict)?\s*[-:,]?\s*([^,\n]+)', address, re.IGNORECASE)
+        if dist_match:
+            place = dist_match.group(1).strip()
+        else:
+            parts = [p.strip() for p in address.split(',')]
+            if parts:
+                pin_idx = -1
+                for i, p in enumerate(parts):
+                    if re.search(r'\b\d{6}\b', p):
+                        pin_idx = i
+                        break
+                if pin_idx >= 1:
+                    pin_part = parts[pin_idx]
+                    if re.search(r'[A-Za-z]+\s*-\s*\d{6}', pin_part):
+                        place = parts[pin_idx - 1]
+                    else:
+                        if pin_idx >= 2:
+                            place = parts[pin_idx - 2]
+                            
+    return {"document_type": "aadhaar", "name": name, "father_name": father_name, "gender": extracted_fields.get("gender"), "address": address, "place": place, "district": place, "raw_text": text}
 
 def parse_extracted_text(text):
     # Extract fields
@@ -717,11 +922,11 @@ def parse_extracted_text(text):
 
     # District
     district = None
-    dist_match = re.search(r"District\s*[-:]?\s*([^,.\n]+)", text, re.IGNORECASE)
+    dist_match = re.search(r"(?<!sub\s)(?<!sub-)\bDist(?:rict)?\s*[-:]?\s*([^,.\n]+)", text, re.IGNORECASE)
     if dist_match:
         district = dist_match.group(1).strip()
     elif business_address:
-        dist_match = re.search(r"District\s*[-:]?\s*([^,.]+)", business_address, re.IGNORECASE)
+        dist_match = re.search(r"(?<!sub\s)(?<!sub-)\bDist(?:rict)?\s*[-:]?\s*([^,.]+)", business_address, re.IGNORECASE)
         if dist_match:
             district = dist_match.group(1).strip()
         else:
@@ -785,7 +990,37 @@ def handle_extract_pdf():
                 temp_pdf_path = temp_pdf.name
                 
             result = extract_text_from_pdf(temp_pdf_path)
-            result["document_type"] = "gst"
+            
+            # Check if GST extraction yielded anything
+            has_gst_data = any([
+                result.get('legal_name'), 
+                result.get('trade_name'), 
+                result.get('business_address'), 
+                result.get('pan_number')
+            ])
+            
+            if has_gst_data:
+                result["document_type"] = "gst"
+            else:
+                # If no GST data was found, it might be an Aadhaar/PAN image saved as a PDF.
+                # Convert the first page to an image and run image extraction.
+                try:
+                    import pypdfium2 as pdfium
+                    with pdfium.PdfDocument(temp_pdf_path) as pdf:
+                        page = pdf[0]
+                        bitmap = page.render(scale=300/72) # 300 DPI
+                        pil_image = bitmap.to_pil()
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
+                        pil_image.save(temp_img.name)
+                        temp_img_path = temp_img.name
+                    
+                    result = extract_text_from_img(temp_img_path)
+                    
+                    if os.path.exists(temp_img_path):
+                        os.remove(temp_img_path)
+                except Exception as e:
+                    result = {"error": f"Failed to process PDF as image: {str(e)}", "name": None, "raw_text": ""}
             
             # Clean up the file
             if os.path.exists(temp_pdf_path):
@@ -851,6 +1086,10 @@ def handle_extract_pdf():
             # fall back to the heuristically parsed address from extract_text_from_img
             if not result.get("business_address") and ocr_res.get("address"):
                 result["business_address"] = ocr_res["address"]
+                
+            # Similarly, fallback for district/place
+            if not result.get("district") and (ocr_res.get("district") or ocr_res.get("place")):
+                result["district"] = ocr_res.get("district") or ocr_res.get("place")
                 
             return jsonify({"success": True, "data": result})
         except Exception as e:

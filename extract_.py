@@ -3,7 +3,9 @@ import os
 import cv2
 import pytesseract
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+if os.path.exists(tesseract_path):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 def clean_extracted_name(name):
     """
@@ -67,22 +69,14 @@ def extract_address_from_ocr(texts):
                                 if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
                                     continue
                                 
-                                # Filter Hindi gibberish (keep uppercase, titlecase, digits, punctuation)
-                                words_in_line = addr_line.split()
+                                # Simplify filtering: keep all words but remove OCR noise characters
                                 clean_words = []
-                                for w in words_in_line:
-                                    w_stripped = w.strip(".,:-_`'\"|()[]{}")
-                                    if not w_stripped:
-                                        clean_words.append(w)
-                                        continue
-                                    if w_stripped.isupper() or w_stripped[0].isupper() or any(c.isdigit() for c in w_stripped):
-                                        if w_stripped.startswith('s') and len(w_stripped) > 2 and w_stripped[1].isupper():
-                                            w = w[1:]
-                                        if w_stripped.startswith('g') and len(w_stripped) > 2 and w_stripped[1].isupper():
-                                            w = w[1:]
-                                        clean_words.append(w)
+                                for w in addr_line.split():
+                                    w_clean = re.sub(r'[\|\[\]\{\}_~]', '', w)
+                                    if w_clean:
+                                        clean_words.append(w_clean)
                                 
-                                clean_line = " ".join(clean_words).strip(" .,:-_`'\"|")
+                                clean_line = " ".join(clean_words).strip(" .,:-`'\"")
                                 if clean_line:
                                     address_lines.append(clean_line)
                                     
@@ -126,32 +120,14 @@ def extract_address_from_ocr(texts):
                 for k in range(idx, min(idx + 5, len(lines))):
                     addr_line = lines[k].strip(".,:-_`'\"| ")
                     
-                    # Split into words and keep uppercase, titlecase, digits, parentheses
-                    words = addr_line.split()
+                    # Clean OCR noise characters but keep all words (don't hardcode uppercase/prefix checks)
                     clean_words = []
-                    for w in words:
-                        w_stripped = w.strip(".,:-_`'\"|")
-                        if not w_stripped:
-                            continue
-                        
-                        # Clean leading lowercase prefixes first
-                        w_temp = w_stripped
-                        if w_temp.startswith('g') and len(w_temp) > 2 and w_temp[1].isupper():
-                            w = w[1:]
-                            w_temp = w_temp[1:]
-                        if w_temp.startswith('s') and len(w_temp) > 2 and w_temp[1].isupper():
-                            w = w[1:]
-                            w_temp = w_temp[1:]
-                        if w_temp.startswith('S') and len(w_temp) > 5 and w_temp[1].islower() and 'kerala' in w_temp.lower():
-                            w = "Kerala" + w[len("Sikerala"):] if "Sikerala" in w else "Kerala"
-                            w_temp = "Kerala"
-                        
-                        # Keep if uppercase, title-case, contains digits, or is inside parentheses/brackets
-                        if w_temp.isupper() or w_temp[0].isupper() or any(c.isdigit() for c in w_temp) or (w_temp.startswith('(') and w_temp.endswith(')')) or (w_temp.startswith('[') and w_temp.endswith(']')):
-                            w_clean = w.strip("|[]{} g")
+                    for w in addr_line.split():
+                        w_clean = re.sub(r'[\|\[\]\{\}_~]', '', w)
+                        if w_clean:
                             clean_words.append(w_clean)
                     
-                    clean_line = " ".join(clean_words).strip(" .,:-_`'\"|")
+                    clean_line = " ".join(clean_words).strip(" .,:-`'\"")
                     if k == idx:
                         clean_line = re.sub(r'(?i)address\s*:\s*', '', clean_line).strip()
                         clean_line = re.sub(r'(?i)addresss\s*:\s*', '', clean_line).strip()
