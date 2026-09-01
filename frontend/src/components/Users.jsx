@@ -16,6 +16,11 @@ function Users({ user, onLogout, onTabChange }) {
     const [error, setError] = useState(null);
     const [successMessage, setSuccessMessage] = useState(null);
     
+    // Edit user modal states
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editUser, setEditUser] = useState(null);
+    const [editing, setEditing] = useState(false);
+
     // Add user modal states
     const [showAddModal, setShowAddModal] = useState(false);
     const [newEmpCode, setNewEmpCode] = useState('');
@@ -99,6 +104,41 @@ function Users({ user, onLogout, onTabChange }) {
             setError(err.response?.data?.message || 'Failed to create user');
         } finally {
             setAdding(false);
+        }
+    };
+
+    // Edit user handler
+    const handleEditUser = async (e) => {
+        e.preventDefault();
+        if (!editUser.employee_code.trim() || !editUser.name.trim()) return;
+
+        setEditing(true);
+        setError(null);
+        try {
+            const response = await axios.put(`${config.API_BASE_URL}/api/users/${editUser.id}`, {
+                employee_code: editUser.employee_code.trim().toUpperCase(),
+                name: editUser.name.trim(),
+                email: editUser.email.trim(),
+                password: editUser.password.trim(),
+                accessed_menus: editUser.accessed_menus,
+                role: editUser.role
+            });
+
+            if (response.data && response.data.success) {
+                setSuccessMessage('User updated successfully!');
+                setShowEditModal(false);
+                setEditUser(null);
+                fetchUsers();
+                
+                setTimeout(() => setSuccessMessage(null), 5000);
+            } else {
+                setError(response.data.message || 'Failed to update user');
+            }
+        } catch (err) {
+            console.error('Error updating user:', err);
+            setError(err.response?.data?.message || 'Failed to update user');
+        } finally {
+            setEditing(false);
         }
     };
 
@@ -235,13 +275,12 @@ function Users({ user, onLogout, onTabChange }) {
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                                             {pagedUsers.map((u) => {
                                                 const isSelf = u.employee_code === user?.employee_code;
-                                                const userInitials = u.name ? u.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'JD';
                                                 return (
                                                     <tr key={u.id} className="hover:bg-slate-50/55 dark:hover:bg-slate-800/20 transition-colors duration-200">
                                                         <td className="py-5 px-8">
                                                             <div className="flex items-center gap-4">
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="text-[15px] font-bold text-slate-950 dark:text-white flex items-center gap-2 truncate">
+                                                                    <span className="text-[15px] font-bold text-slate-950 dark:text-white flex items-center gap-2 truncate capitalize">
                                                                         {u.name}
                                                                         {isSelf && (
                                                                             <span className="px-2 py-0.5 bg-blue-600/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-full shrink-0">
@@ -293,7 +332,14 @@ function Users({ user, onLogout, onTabChange }) {
                                                         <td className="py-5 px-8 text-right">
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <button
-                                                                    onClick={() => alert(`Edit User feature is currently in design phase. Target user: ${u.name}`)}
+                                                                    onClick={() => {
+                                                                        setEditUser({
+                                                                            ...u,
+                                                                            accessed_menus: u.accessed_menus ? u.accessed_menus.split(',') : ['fin-report', 'documat'],
+                                                                            password: ''
+                                                                        });
+                                                                        setShowEditModal(true);
+                                                                    }}
                                                                     className="h-9 w-9 inline-flex items-center justify-center rounded-xl bg-slate-100 hover:bg-blue-50 dark:bg-slate-800/80 dark:hover:bg-blue-500/10 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-all duration-200 cursor-pointer border border-slate-200/40 dark:border-slate-700/50"
                                                                     title="Edit User"
                                                                 >
@@ -394,7 +440,7 @@ function Users({ user, onLogout, onTabChange }) {
                                         placeholder="e.g. JB1045"
                                         value={newEmpCode}
                                         onChange={(e) => setNewEmpCode(e.target.value)}
-                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-[13px]"
+                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-[13px] uppercase"
                                     />
                                 </div>
 
@@ -406,7 +452,7 @@ function Users({ user, onLogout, onTabChange }) {
                                         placeholder="Enter full name"
                                         value={newName}
                                         onChange={(e) => setNewName(e.target.value)}
-                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px]"
+                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px] capitalize"
                                     />
                                 </div>
                             </div>
@@ -508,6 +554,146 @@ function Users({ user, onLogout, onTabChange }) {
                                     </>
                                 ) : (
                                     'Create'
+                                )}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Edit User Modal */}
+            {showEditModal && editUser && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <form 
+                        onSubmit={handleEditUser}
+                        className="bg-white dark:bg-[#0a0f18] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800 p-8 flex flex-col animate-in zoom-in-95 duration-200"
+                    >
+                        <h3 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white mb-6">Edit User</h3>
+                        
+                        <div className="flex flex-col gap-5 mb-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="flex flex-col gap-2">
+                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Employee Code</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. JB1045"
+                                        value={editUser.employee_code}
+                                        onChange={(e) => setEditUser({...editUser, employee_code: e.target.value})}
+                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono text-[13px] uppercase"
+                                    />
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Full Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Enter full name"
+                                        value={editUser.name}
+                                        onChange={(e) => setEditUser({...editUser, name: e.target.value})}
+                                        className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px] capitalize"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Email Address</label>
+                                <input
+                                    type="email"
+                                    required
+                                    placeholder="e.g. staff@jubilantenterprises.in"
+                                    value={editUser.email || ''}
+                                    onChange={(e) => setEditUser({...editUser, email: e.target.value})}
+                                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px]"
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">New Password (Optional)</label>
+                                <input
+                                    type="text"
+                                    placeholder="Leave blank to keep current password"
+                                    value={editUser.password || ''}
+                                    onChange={(e) => setEditUser({...editUser, password: e.target.value})}
+                                    className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px]"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="flex flex-col gap-2">
+                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Security Role</label>
+                                    <div className="relative">
+                                        <select
+                                            value={editUser.role}
+                                            onChange={(e) => setEditUser({...editUser, role: e.target.value})}
+                                            className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer font-bold text-[13px]"
+                                        >
+                                            <option value="user">Staff Member (User)</option>
+                                            <option value="admin">System Administrator (Admin)</option>
+                                        </select>
+                                        <span className="material-symbols-outlined absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                            keyboard_arrow_down
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Accessed Menus</label>
+                                    <div className="relative">
+                                        <select
+                                            value={
+                                                editUser.accessed_menus.includes('fin-report') && editUser.accessed_menus.includes('documat') ? 'both' :
+                                                editUser.accessed_menus.includes('fin-report') ? 'fin-report' :
+                                                editUser.accessed_menus.includes('documat') ? 'documat' : 'none'
+                                            }
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                let newMenus = [];
+                                                if (val === 'both') {
+                                                    newMenus = ['fin-report', 'documat'];
+                                                } else if (val === 'fin-report') {
+                                                    newMenus = ['fin-report'];
+                                                } else if (val === 'documat') {
+                                                    newMenus = ['documat'];
+                                                }
+                                                setEditUser({...editUser, accessed_menus: newMenus});
+                                            }}
+                                            className="w-full px-6 py-4 rounded-2xl bg-slate-50 dark:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all appearance-none cursor-pointer font-bold text-[13px]"
+                                        >
+                                            <option value="both">Both (Fin Report & Documat)</option>
+                                            <option value="fin-report">Fin Report Only</option>
+                                            <option value="documat">Documat Only</option>
+                                            <option value="none">None</option>
+                                        </select>
+                                        <span className="material-symbols-outlined absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                                            keyboard_arrow_down
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowEditModal(false)}
+                                className="flex-1 px-6 py-4 rounded-xl border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest text-[11px] hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={editing}
+                                className="flex-1 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 flex items-center justify-center gap-2"
+                            >
+                                {editing ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Updating...
+                                    </>
+                                ) : (
+                                    'Update'
                                 )}
                             </button>
                         </div>

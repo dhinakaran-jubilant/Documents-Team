@@ -1071,9 +1071,41 @@ def handle_generate_promissory_note():
                 
         # Use cleaned_joinees for all template fill operations
         joinees_list = cleaned_joinees
+        
+        entity_type = data.get('entityType', 'Proprietor')
+        if entity_type == 'Partnership':
+            has_guarantor = True # Force generation of the 3rd document (Resolution)
 
         # Resolve template folder and paths dynamically
-        if has_guarantor:
+        if entity_type == 'Partnership':
+            template_folder = os.path.join(app.root_path, 'template', 'Partnership')
+            
+            promissory_template_name = 'PROMISSORY NOTE - ASQ - GREENMAXX BIO POLYMERS.docx'
+            promissory_template_path = os.path.join(template_folder, promissory_template_name)
+            
+            letterpad_template_name = 'LETTERPAD - ASQ - GREENMAX BIO POLYMERS.docx'
+            letterpad_template_path = os.path.join(template_folder, letterpad_template_name)
+            
+            ltrl_template_name = 'RESOLUTION - GREENMAX BIO POLYMERS.docx'
+            ltrl_template_path = os.path.join(template_folder, ltrl_template_name)
+            
+            promissory_template_name = 'Promissory Note.docx'
+            promissory_template_path = os.path.join(template_folder, promissory_template_name)
+            
+            # Check for different possible names of the Letterpad template
+            letterpad_template_name = 'Letterpad.docx'
+            if os.path.exists(os.path.join(template_folder, 'LETTERPAD -FC- THALAKULAM.docx')):
+                letterpad_template_name = 'LETTERPAD -FC- THALAKULAM.docx'
+            elif os.path.exists(os.path.join(template_folder, 'Letter pad.docx')):
+                letterpad_template_name = 'Letter pad.docx'
+            letterpad_template_path = os.path.join(template_folder, letterpad_template_name)
+            
+            ltrl_template_name = 'Resolution.docx'
+            ltrl_template_path = os.path.join(template_folder, ltrl_template_name)
+            
+            undertaking_template_name = 'Letter of Undertaking.docx'
+            undertaking_template_path = os.path.join(template_folder, undertaking_template_name)
+        elif has_guarantor:
             template_folder = os.path.join(app.root_path, 'template', 'Proprietor_with_guarantor')
             
             promissory_template_name = 'Promissory Note.docx'
@@ -1112,20 +1144,22 @@ def handle_generate_promissory_note():
             # No LTRL template for Proprietor without guarantor
             ltrl_template_path = None
 
-        if not os.path.exists(promissory_template_path):
-            return jsonify({"error": f"Promissory Note template not found at: {promissory_template_path}"}), 404
+        # if not os.path.exists(promissory_template_path):
+        #     return jsonify({"error": f"Promissory Note template not found at: {promissory_template_path}"}), 404
             
-        if not os.path.exists(letterpad_template_path):
-            # Try alternate fallback
-            fallback_name = 'Letter pad.docx' if letterpad_template_name == 'Letterpad.docx' else 'Letterpad.docx'
-            fallback_path = os.path.join(template_folder, fallback_name)
-            if os.path.exists(fallback_path):
-                letterpad_template_path = fallback_path
-            else:
-                return jsonify({"error": f"Letterpad template not found at: {letterpad_template_path}"}), 404
+        # if not os.path.exists(letterpad_template_path):
+        #     # Try alternate fallback
+        #     fallback_name = 'Letter pad.docx' if letterpad_template_name == 'Letterpad.docx' else 'Letterpad.docx'
+        #     fallback_path = os.path.join(template_folder, fallback_name)
+        #     if os.path.exists(fallback_path):
+        #         letterpad_template_path = fallback_path
+        #     elif entity_type != 'Partnership':
+        #         return jsonify({"error": f"Letterpad template not found at: {letterpad_template_path}"}), 404
+        #     else:
+        #         return jsonify({"error": f"Letterpad template not found at: {letterpad_template_path}"}), 404
                 
-        if has_guarantor and not os.path.exists(ltrl_template_path):
-            return jsonify({"error": f"LTRL template not found at: {ltrl_template_path}"}), 404
+        # if has_guarantor and not os.path.exists(ltrl_template_path):
+        #     return jsonify({"error": f"LTRL template not found at: {ltrl_template_path}"}), 404
             
         if not os.path.exists(undertaking_template_path):
             return jsonify({"error": f"Letter of Undertaking template not found at: {undertaking_template_path}"}), 404
@@ -1160,10 +1194,10 @@ def handle_generate_promissory_note():
                     
                     try:
                         # Fill templates
-                        fill_promissory_note_docx(loan_form_data, joinees_list, promissory_template_path, temp_promissory_path)
-                        fill_letterpad_docx(loan_form_data, joinees_list, letterpad_template_path, temp_letterpad_path)
-                        if has_guarantor:
-                            fill_ltrl_docx(loan_form_data, joinees_list, ltrl_template_path, temp_ltrl_path)
+                        # fill_promissory_note_docx(loan_form_data, joinees_list, promissory_template_path, temp_promissory_path)
+                        # fill_letterpad_docx(loan_form_data, joinees_list, letterpad_template_path, temp_letterpad_path)
+                        # if has_guarantor:
+                        #     fill_ltrl_docx(loan_form_data, joinees_list, ltrl_template_path, temp_ltrl_path)
                         fill_letter_of_undertaking_docx(loan_form_data, joinees_list, undertaking_template_path, temp_undertaking_path)
                         
                         lender_name_clean = secure_filename(loan['lenderName'])
@@ -1171,19 +1205,19 @@ def handle_generate_promissory_note():
                             promissory_filename = f"Promissory_Note_{proprietor_name_clean}.docx"
                             letterpad_filename = f"Letterpad_{proprietor_name_clean}.docx"
                             if has_guarantor:
-                                ltrl_filename = f"LTRL_{proprietor_name_clean}.docx"
+                                ltrl_filename = f"Resolution_{proprietor_name_clean}.docx" if entity_type == 'Partnership' else f"LTRL_{proprietor_name_clean}.docx"
                             undertaking_filename = f"Letter_of_Undertaking_{proprietor_name_clean}.docx"
                         else:
                             promissory_filename = f"Promissory_Note_{proprietor_name_clean}_{lender_name_clean}.docx"
                             letterpad_filename = f"Letterpad_{proprietor_name_clean}_{lender_name_clean}.docx"
                             if has_guarantor:
-                                ltrl_filename = f"LTRL_{proprietor_name_clean}_{lender_name_clean}.docx"
+                                ltrl_filename = f"Resolution_{proprietor_name_clean}_{lender_name_clean}.docx" if entity_type == 'Partnership' else f"LTRL_{proprietor_name_clean}_{lender_name_clean}.docx"
                             undertaking_filename = f"Letter_of_Undertaking_{proprietor_name_clean}_{lender_name_clean}.docx"
                             
-                        zip_file.write(temp_promissory_path, arcname=promissory_filename)
-                        zip_file.write(temp_letterpad_path, arcname=letterpad_filename)
-                        if has_guarantor:
-                            zip_file.write(temp_ltrl_path, arcname=ltrl_filename)
+                        # zip_file.write(temp_promissory_path, arcname=promissory_filename)
+                        # zip_file.write(temp_letterpad_path, arcname=letterpad_filename)
+                        # if has_guarantor:
+                        #     zip_file.write(temp_ltrl_path, arcname=ltrl_filename)
                         zip_file.write(temp_undertaking_path, arcname=undertaking_filename)
                     finally:
                         temp_paths = [temp_promissory_path, temp_letterpad_path, temp_undertaking_path]
@@ -1556,6 +1590,67 @@ def delete_user(user_id):
             release_conn(conn)
             
         return jsonify({'success': True, 'message': 'User deleted successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    """
+    Updates an existing user.
+    """
+    try:
+        data = request.json
+        emp_code = str(data.get('employee_code', '')).strip().upper()
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '').strip()
+        accessed = data.get('accessed_menus', '')
+        role = data.get('role', 'user').strip()
+        
+        if not emp_code or not name:
+            return jsonify({'success': False, 'message': 'Employee code and name are required'}), 400
+            
+        if isinstance(accessed, list):
+            accessed_str = ",".join(accessed)
+        else:
+            accessed_str = str(accessed).strip() or 'fin-report,documat'
+            
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                # Check if user exists
+                cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+                if not cur.fetchone():
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                
+                # Check if employee code belongs to another user
+                cur.execute("SELECT id FROM users WHERE employee_code = %s AND id != %s", (emp_code, user_id))
+                if cur.fetchone():
+                    return jsonify({'success': False, 'message': 'Another user with this employee code already exists'}), 400
+                
+                if password:
+                    pwd_hash = generate_password_hash(password)
+                    cur.execute(
+                        "UPDATE users SET employee_code = %s, name = %s, email = %s, role = %s, accessed_menus = %s, password = %s, is_initial_password = TRUE WHERE id = %s",
+                        (emp_code, name, email, role, accessed_str, pwd_hash, user_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE users SET employee_code = %s, name = %s, email = %s, role = %s, accessed_menus = %s WHERE id = %s",
+                        (emp_code, name, email, role, accessed_str, user_id)
+                    )
+                conn.commit()
+        finally:
+            release_conn(conn)
+            
+        return jsonify({'success': True, 'message': 'User updated successfully', 'user': {
+            'id': user_id,
+            'employee_code': emp_code,
+            'name': name,
+            'email': email,
+            'role': role,
+            'accessed_menus': accessed_str
+        }})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 

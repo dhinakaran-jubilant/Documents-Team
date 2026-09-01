@@ -561,11 +561,12 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             const result = await response.json();
 
             if (result.success && result.data) {
-                const { ifsc, account_number } = result.data;
+                const { ifsc, account_number, bank_name } = result.data;
                 setFormData(prev => ({
                     ...prev,
                     ifsc: ifsc ? ifsc.toUpperCase() : prev.ifsc,
-                    accountNumber: account_number ? account_number.toUpperCase() : prev.accountNumber
+                    accountNumber: account_number ? account_number : prev.accountNumber,
+                    bankName: bank_name ? bank_name : prev.bankName,
                 }));
             } else {
                 console.error(result.error);
@@ -605,7 +606,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                         /* Selection Grid */
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                             {options.map((option) => {
-                                const isEnabled = option === 'Proprietor';
+                                const isEnabled = option === 'Proprietor' || option === 'Partnership';
                                 return (
                                 <button
                                     key={option}
@@ -683,8 +684,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                             )}
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Proprietor Details</h3>
-                                                    <p className="text-[11px] text-slate-500 mt-1">Specify proprietor details or upload Aadhaar/PAN/GST card</p>
+                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">{selectedType === 'Partnership' ? 'Partnership Details' : 'Proprietor Details'}</h3>
+                                                    <p className="text-[11px] text-slate-500 mt-1">{selectedType === 'Partnership' ? 'Specify partnership details or upload PAN/GST document' : 'Specify proprietor details or upload Aadhaar/PAN/GST card'}</p>
                                                 </div>
                                                 <label className="w-8 h-8 rounded-xl flex items-center justify-center text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all cursor-pointer relative" title="Upload Aadhaar / PAN / GST">
                                                     <input
@@ -703,30 +704,34 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Borrower Firm Name <span className="text-red-500">*</span></label>
                                                     <input type="text" placeholder="Enter borrower firm name" value={formData.companyName} onChange={(e) => setFormData({ ...formData, companyName: e.target.value })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Proprietor Name <span className="text-red-500">*</span></label>
-                                                    <div className="flex gap-2">
-                                                        <select
-                                                            value={formData.proprietorTitle || 'Mr.'}
-                                                            onChange={(e) => setFormData({ ...formData, proprietorTitle: e.target.value })}
-                                                            className="appearance-none pl-4 pr-8 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium min-w-[80px] bg-[size:16px] bg-[position:right_10px_center] bg-no-repeat bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')]"
-                                                        >
-                                                            <option value="Mr.">Mr.</option>
-                                                            <option value="Mrs.">Mrs.</option>
-                                                        </select>
-                                                        <input
-                                                            type="text"
-                                                            placeholder="Enter proprietor name"
-                                                            value={formData.proprietorName}
-                                                            onChange={(e) => setFormData({ ...formData, proprietorName: e.target.value })}
-                                                            className="flex-1 px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Father of Proprietor <span className="text-red-500">*</span></label>
-                                                    <input type="text" placeholder="Enter father's name" value={formData.fatherOfProprietor} onChange={(e) => setFormData({ ...formData, fatherOfProprietor: e.target.value })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
-                                                </div>
+                                                {selectedType !== 'Partnership' && (
+                                                    <>
+                                                        <div className="space-y-2">
+                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Proprietor Name <span className="text-red-500">*</span></label>
+                                                            <div className="flex gap-2">
+                                                                <select
+                                                                    value={formData.proprietorTitle || 'Mr.'}
+                                                                    onChange={(e) => setFormData({ ...formData, proprietorTitle: e.target.value })}
+                                                                    className="appearance-none pl-4 pr-8 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium min-w-[80px] bg-[size:16px] bg-[position:right_10px_center] bg-no-repeat bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')]"
+                                                                >
+                                                                    <option value="Mr.">Mr.</option>
+                                                                    <option value="Mrs.">Mrs.</option>
+                                                                </select>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Enter proprietor name"
+                                                                    value={formData.proprietorName}
+                                                                    onChange={(e) => setFormData({ ...formData, proprietorName: e.target.value })}
+                                                                    className="flex-1 px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Father of Proprietor <span className="text-red-500">*</span></label>
+                                                            <input type="text" placeholder="Enter father's name" value={formData.fatherOfProprietor} onChange={(e) => setFormData({ ...formData, fatherOfProprietor: e.target.value })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+                                                        </div>
+                                                    </>
+                                                )}
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Borrower Firm PAN <span className="text-red-500">*</span></label>
                                                     <input type="text" maxLength={10} placeholder="XXXXX0000X" value={formData.proprietorPan} onChange={(e) => setFormData({ ...formData, proprietorPan: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase" />
@@ -1033,8 +1038,8 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                         <div className="space-y-6">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Guarantor Information</h3>
-                                                    <p className="text-[11px] text-slate-500 mt-1">Add details of any guarantors</p>
+                                                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">{selectedType === 'Partnership' ? 'Partner Information' : 'Guarantor Information'}</h3>
+                                                    <p className="text-[11px] text-slate-500 mt-1">{selectedType === 'Partnership' ? 'Add details of any partners' : 'Add details of any guarantors'}</p>
                                                 </div>
                                                 <button
                                                     type="button"
@@ -1042,7 +1047,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-blue-600 shadow-md shadow-blue-600/20 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer`}
                                                 >
                                                     <span className="material-symbols-outlined text-sm">add</span>
-                                                    Add Guarantor
+                                                    Add {selectedType === 'Partnership' ? 'Partner' : 'Guarantor'}
                                                 </button>
                                             </div>
 
@@ -1057,7 +1062,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         </div>
                                                     )}
                                                     <div className="flex items-center justify-between">
-                                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Guarantor #{index + 1}</h4>
+                                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">{selectedType === 'Partnership' ? 'Partner' : 'Guarantor'} #{index + 1}</h4>
                                                         <div className="flex items-center gap-2">
                                                             <label className="w-8 h-8 rounded-xl flex items-center justify-center text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all cursor-pointer relative" title="Upload Aadhaar / PAN">
                                                                 <input
@@ -1080,7 +1085,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                         <div className="space-y-2">
-                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Guarantor Name <span className="text-red-500">*</span></label>
+                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">{selectedType === 'Partnership' ? 'Partner Name' : 'Guarantor Name'} <span className="text-red-500">*</span></label>
                                                             <div className="flex gap-2">
                                                                 <select
                                                                     value={joinee.title || 'Mr.'}
@@ -1096,7 +1101,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                                 </select>
                                                                 <input
                                                                     type="text"
-                                                                    placeholder="Enter joinee name"
+                                                                    placeholder={selectedType === 'Partnership' ? 'Enter partner name' : 'Enter joinee name'}
                                                                     value={joinee.name}
                                                                     onChange={(e) => {
                                                                         const updated = [...joinees];
@@ -1108,21 +1113,37 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                             </div>
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Guarantor Father <span className="text-red-500">*</span></label>
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Enter father's name"
-                                                                value={joinee.father}
-                                                                onChange={(e) => {
-                                                                    const updated = [...joinees];
-                                                                    updated[index].father = e.target.value;
-                                                                    setJoinees(updated);
-                                                                }}
-                                                                className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                                            />
+                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">{selectedType === 'Partnership' ? 'Partner Relation' : 'Guarantor Father'} <span className="text-red-500">*</span></label>
+                                                            <div className="flex gap-2">
+                                                                <select
+                                                                    value={joinee.relationType || 'S/o'}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...joinees];
+                                                                        updated[index].relationType = e.target.value;
+                                                                        setJoinees(updated);
+                                                                    }}
+                                                                    className="appearance-none pl-4 pr-8 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium min-w-[80px] bg-[size:16px] bg-[position:right_10px_center] bg-no-repeat bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M7%209l3%203%203-3%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')]"
+                                                                >
+                                                                    <option value="S/o">S/o</option>
+                                                                    <option value="D/o">D/o</option>
+                                                                    <option value="W/o">W/o</option>
+                                                                    <option value="C/o">C/o</option>
+                                                                </select>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder={selectedType === 'Partnership' ? 'Enter relation name' : "Enter father's name"}
+                                                                    value={joinee.father}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...joinees];
+                                                                        updated[index].father = e.target.value;
+                                                                        setJoinees(updated);
+                                                                    }}
+                                                                    className="flex-1 px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div className="space-y-2">
-                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Guarantor PAN <span className="text-red-500">*</span></label>
+                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">{selectedType === 'Partnership' ? 'Partner PAN' : 'Guarantor PAN'} <span className="text-red-500">*</span></label>
                                                             <input
                                                                 type="text"
                                                                 maxLength={10}
@@ -1136,20 +1157,22 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                                 className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
                                                             />
                                                         </div>
-                                                        <div className="space-y-2">
-                                                            <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Guarantor Address <span className="text-red-500">*</span></label>
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Enter address"
-                                                                value={joinee.address}
-                                                                onChange={(e) => {
-                                                                    const updated = [...joinees];
-                                                                    updated[index].address = e.target.value;
-                                                                    setJoinees(updated);
-                                                                }}
-                                                                className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                                            />
-                                                        </div>
+                                                        {selectedType !== 'Partnership' && (
+                                                            <div className="space-y-2">
+                                                                <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">{selectedType === 'Partnership' ? 'Partner Address' : 'Guarantor Address'} <span className="text-red-500">*</span></label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="Enter address"
+                                                                    value={joinee.address}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...joinees];
+                                                                        updated[index].address = e.target.value;
+                                                                        setJoinees(updated);
+                                                                    }}
+                                                                    className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))}

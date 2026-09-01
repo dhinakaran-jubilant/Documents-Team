@@ -544,100 +544,150 @@ VALID_PREFIXES = ["CIUB", "HDFC", "ICIC", "UTIB", "SBIN", "PUNB", "CNRB", "BARB"
 
 def extract_bank_details(file_path):
     """
-    Extracts bank account details (IFSC, Account Number) 
+    Extracts bank account details (IFSC, Account Number)
     from cheques and passbook images using OCR and advanced regex/heuristics.
+    Multiple preprocessing passes (sharpening, CLAHE, resize) + PSM4/PSM3/PSM6
+    ensure reliable extraction from low-contrast cheque images.
     """
     if not os.path.exists(file_path):
         print(f"Error: File {file_path} does not exist!")
         return None
-        
+
     img = cv2.imread(file_path)
     if img is None:
         print(f"Error: Could not read image {file_path}")
         return None
-        
+
+    import numpy as np
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # 1. Resize image (2x) to make dense small print (like IFSC, address) much clearer
-    resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    
-    # Run multiple OCR passes to maximize capture accuracy
-    text_psm3_orig = pytesseract.image_to_string(gray, config='--oem 3 --psm 3')
-    text_psm6_orig = pytesseract.image_to_string(gray, config='--oem 3 --psm 6')
-    text_psm3_resized = pytesseract.image_to_string(resized, config='--oem 3 --psm 3')
-    text_psm6_resized = pytesseract.image_to_string(resized, config='--oem 3 --psm 6')
-    
-    all_passes = [text_psm3_resized, text_psm6_resized, text_psm3_orig, text_psm6_orig]
-    
+
+    # ── Preprocessing passes ──────────────────────────────────────────────────
+    # 1. Sharpen the colour image (best for cheques with light pastel background)
+    sharpen_kernel  = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    sharpened_color = cv2.filter2D(img, -1, sharpen_kernel)
+    sharpened_gray  = cv2.cvtColor(sharpened_color, cv2.COLOR_BGR2GRAY)
+
+    # 2. Standard resize passes on gray (2x and 1.5x for different font sizes)
+    resized_gray    = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    resized_sharp   = cv2.resize(sharpened_gray, None, fx=2, fy=2, interpolation=cv2.INTER_LANCZOS4)
+    resized_sharp_15 = cv2.resize(sharpened_gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LANCZOS4)
+
+    # 3. CLAHE enhanced
+    clahe           = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    clahe_gray      = clahe.apply(gray)
+    resized_clahe   = cv2.resize(clahe_gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+    # Run multiple OCR passes — PSM4 works well for cheques (single-column text blocks)
+    passes_config = [
+        (resized_sharp_15, '--oem 3 --psm 4'), # Primary 1: sharpened 1.5x, PSM4 (great for account numbers)
+        (resized_sharp,  '--oem 3 --psm 4'),   # Primary 2: sharpened 2x, PSM4 (great for IFSC)
+        (resized_sharp_15, '--oem 3 --psm 6'), # Sharpened 1.5x, PSM6
+        (resized_sharp,  '--oem 3 --psm 6'),   # Sharpened 2x, PSM6
+        (resized_gray,   '--oem 3 --psm 3'),   # Standard 2x, PSM3
+        (resized_gray,   '--oem 3 --psm 6'),   # Standard 2x, PSM6
+        (resized_clahe,  '--oem 3 --psm 4'),   # CLAHE 2x, PSM4
+        (gray,           '--oem 3 --psm 3'),   # Original, PSM3
+        (gray,           '--oem 3 --psm 6'),   # Original, PSM6
+    ]
+
+    all_passes = []
+    for src, cfg in passes_config:
+        try:
+            all_passes.append(pytesseract.image_to_string(src, config=cfg))
+        except Exception:
+            all_passes.append("")
+
     ifsc = None
     account_number = None
     bank_name = None
-    
+
     # A. Heuristics for IFSC Code
-    # Format: [A-Z]{4}0[A-Z0-9]{6}
-    ifsc_pattern = re.compile(r'([A-Za-z]{4})[0-9Oo]([A-Za-z0-9]{6})')
-    
+    # Standard IFSC: [A-Z]{4}0[A-Z0-9]{6} — position-5 is always digit '0'
+    # OCR commonly misreads '0' as 'O', so we accept both in position 5.
+    ifsc_pattern       = re.compile(r'\b([A-Za-z]{4})[0Oo]([A-Za-z0-9]{6})\b')
+    ifsc_label_pattern = re.compile(r'IFSC[:\s]*([A-Za-z]{4}[0Oo][A-Za-z0-9]{6})', re.IGNORECASE)
+
     for pas in all_passes:
+        # Try label-anchored match first (most reliable on cheques)
+        label_match = ifsc_label_pattern.search(pas)
+        if label_match:
+            raw    = label_match.group(1).upper()
+            prefix = raw[:4].replace('1', 'I').replace('0', 'O')
+            suffix = raw[5:].replace('O', '0').replace('I', '1').replace('L', '1')
+            candidate = f"{prefix}0{suffix}"
+            if len(candidate) == 11:
+                ifsc = candidate
+                break
+
+        # Fallback: broad pattern scan
         matches = ifsc_pattern.findall(pas)
         for m in matches:
-            part1 = m[0].upper()
-            part2 = m[1].upper()
-            
-            # Common OCR error replacements
-            part1 = part1.replace('1', 'I').replace('0', 'O')
-            part2 = part2.replace('O', '0').replace('G', '6').replace('I', '1').replace('L', '1').replace('l', '1')
-            
-            # Custom corrections
+            part1 = m[0].upper().replace('1', 'I').replace('0', 'O')
+            part2 = m[1].upper().replace('O', '0').replace('G', '6').replace('I', '1').replace('L', '1').replace('l', '1')
             if 'g' in m[1].lower():
                 part2 = part2.replace('G', '9')
-            
             if part1 == "C1UB":
                 part1 = "CIUB"
-                
-            candidate_prefix = part1
-            if candidate_prefix in VALID_PREFIXES:
+            if part1 in VALID_PREFIXES:
                 candidate_ifsc = f"{part1}0{part2}"
                 if len(candidate_ifsc) == 11:
                     ifsc = candidate_ifsc
                     break
         if ifsc:
             break
-            
+
     # B. Heuristics for Account Number
-    # Score candidate numbers:
     candidates = []
     
+    # Try direct label match first (like A/C No. XXXXXXX)
+    acc_label_pattern = re.compile(r'(?:a/c|account|acc no|acno|खा\.स\.|खाता|a/c\s*no\.?|a/c\s*no)[\s:.\-]*(\d{9,18})', re.IGNORECASE)
+
     for pas in all_passes:
+        # First check for label match
+        label_match = acc_label_pattern.search(pas)
+        if label_match:
+            # If we find a strong label match, add it with a very high score
+            candidates.append((100, label_match.group(1)))
+
         lines = pas.split('\n')
         for line in lines:
             if not line.strip():
                 continue
-            
-            # Skip potential bottom line/MICR containing common cheque indicators
-            if any(indicator in line for indicator in ['"', '⑈', 'O00', 'BOO']):
+
+            # Skip MICR bottom line (cheque special symbols)
+            if any(indicator in line for indicator in ['"', '⑈', 'O00', 'BOO', '@@', '\u201c', '\u201d']):
                 continue
-                
-            # Merge spaces between digits in this line to capture spaced numbers
+
+            # Merge spaces between digits (spaced account numbers on cheques)
             line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line)
-            line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line_cleaned) # double pass
-            
-            # Extract all digit sequences between 9 and 18 digits
+            line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line_cleaned)
+
+            # Extract all digit sequences 9–18 digits
             digits = re.findall(r'\b(\d{9,18})\b', line_cleaned)
             for d in digits:
                 score = 5
-                # Boost score if line has account keywords
-                if any(kw in line.lower() for kw in ['a/c', 'account', 'acc', 'no', 'num', 'number']):
+                line_lower = line.lower()
+                # High-confidence: explicit account keywords
+                if any(kw in line_lower for kw in ['a/c', 'account', 'acc no', 'acno', 'खा.स.', 'खाता']):
+                    score = 15
+                elif any(kw in line_lower for kw in ['no.', 'no ', 'number', 'num']):
                     score = 10
+                # Penalise cheque number lines
+                if any(kw in line_lower for kw in ['chq', 'cheque', 'ch.no', 'chq.no']):
+                    score = max(1, score - 8)
                 candidates.append((score, d))
-                
+
     if candidates:
         candidates.sort(key=lambda x: x[0], reverse=True)
         account_number = candidates[0][1]
-            
+
     # C. Heuristics for Bank Name
     for pas in all_passes:
         pas_upper = pas.upper()
-        if "CITY UNION BANK" in pas_upper or "CUB" in pas_upper or "UNION BANK" in pas_upper:
+        if "FEDERAL BANK" in pas_upper or "FDRL" in pas_upper:
+            bank_name = "FEDERAL BANK"
+            break
+        elif "CITY UNION BANK" in pas_upper or "CUB" in pas_upper:
             bank_name = "CITY UNION BANK"
             break
         elif "HDFC" in pas_upper:
@@ -646,7 +696,7 @@ def extract_bank_details(file_path):
         elif "ICICI" in pas_upper:
             bank_name = "ICICI BANK"
             break
-            
+
     # D. ICICI Bank Specific Branch Fallback
     if bank_name == "ICICI BANK" and not ifsc and account_number and len(account_number) == 12:
         branch_code = account_number[:4]
@@ -655,11 +705,13 @@ def extract_bank_details(file_path):
     print(f"\n--- EXTRACTED BANK DETAILS ({os.path.basename(file_path)}) ---")
     print("IFSC Code      :", ifsc)
     print("Account Number :", account_number)
+    print("Bank Name      :", bank_name)
     print("-------------------------------------------------------------")
-    
+
     return {
         "ifsc": ifsc,
-        "account_number": account_number
+        "account_number": account_number,
+        "bank_name": bank_name
     }
 
 if __name__ == '__main__':
