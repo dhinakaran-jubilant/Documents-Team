@@ -1893,7 +1893,8 @@ def delete_documat_history(history_id):
 
 if __name__ == '__main__':
     import os
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     if os.path.exists('cert.pem') and os.path.exists('key.pem'):
-        app.run(host='0.0.0.0', debug=True, port=2000, ssl_context=('cert.pem', 'key.pem'))
+        app.run(host='0.0.0.0', debug=debug_mode, port=2000, ssl_context=('cert.pem', 'key.pem'))
     else:
-        app.run(host='0.0.0.0', debug=True, port=2000)
+        app.run(host='0.0.0.0', debug=debug_mode, port=2000)
