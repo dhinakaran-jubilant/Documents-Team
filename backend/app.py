@@ -136,20 +136,7 @@ ALLOWED_ORIGINS = [
 ]
 CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS, "expose_headers": ["X-Process-Time", "Content-Disposition"]}})
 
-# Restrict access to localhost and 192.168.0.7
-ALLOWED_CLIENT_IPS = {'127.0.0.1', '::1', 'localhost', '192.168.0.7'}
 
-@app.before_request
-def restrict_client_ips():
-    client_ip = request.remote_addr or ''
-    clean_ip = client_ip.replace('::ffff:', '')
-    if client_ip not in ALLOWED_CLIENT_IPS and clean_ip not in ALLOWED_CLIENT_IPS:
-        forwarded_for = request.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            first_ip = forwarded_for.split(',')[0].strip().replace('::ffff:', '')
-            if first_ip in ALLOWED_CLIENT_IPS:
-                return None
-        return jsonify({'error': 'Forbidden: Access is allowed only from localhost and 192.168.0.7'}), 403
 
 def clean_extracted_name(name):
     """
