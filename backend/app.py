@@ -1140,11 +1140,15 @@ def handle_extract_bank():
 
             if doc_type == 'Normal':
                 try:
-                    from cheque_extrator import load_ocr_reader
+                    from cheque_extrator import load_ocr_reader, normalize_paddle_ocr_results, _unpack_ocr_item
                     reader = load_ocr_reader()
-                    ocr_results = reader.ocr(temp_img_path)
-                    ocr_results = ocr_results[0] if ocr_results and ocr_results[0] else []
-                    text_lines = [res[1][0] for res in ocr_results if res[1][1] > 0.1]
+                    raw_ocr = reader.ocr(temp_img_path)
+                    ocr_results = normalize_paddle_ocr_results(raw_ocr)
+                    text_lines = []
+                    for item in ocr_results:
+                        _, text, prob = _unpack_ocr_item(item)
+                        if text and prob > 0.1:
+                            text_lines.append(text)
                     text = "\n".join(text_lines)
                 except Exception:
                     text = ""

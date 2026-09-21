@@ -58,6 +58,45 @@ def _safe_scale_for_ocr(image, max_dim=2000):
         return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
     return image
 
+def _unpack_ocr_item(item):
+    """Safely unpack any PaddleOCR result item into (bbox, text, prob)."""
+    if not item:
+        return None, "", 0.0
+    try:
+        if isinstance(item, dict):
+            bbox = item.get('points') or item.get('bbox') or []
+            text = str(item.get('transcription') or item.get('text') or '')
+            prob = float(item.get('confidence') or item.get('score') or 1.0)
+            return bbox, text, prob
+        if len(item) == 2 and isinstance(item[1], (tuple, list)):
+            bbox = item[0]
+            text = str(item[1][0])
+            prob = float(item[1][1]) if len(item[1]) > 1 else 1.0
+            return bbox, text, prob
+        if len(item) >= 3:
+            return item[0], str(item[1]), float(item[2])
+        if len(item) == 2:
+            return item[0], str(item[1]), 1.0
+    except Exception:
+        pass
+    return None, "", 0.0
+
+def normalize_paddle_ocr_results(raw_results):
+    """Normalizes any PaddleOCR output structure into a list of items."""
+    if not raw_results:
+        return []
+    if isinstance(raw_results, list) and len(raw_results) == 1 and isinstance(raw_results[0], list):
+        first_elem = raw_results[0]
+        if first_elem and isinstance(first_elem, list):
+            # Check if it's already a single line [bbox, (text, prob)]
+            if len(first_elem) == 2 and isinstance(first_elem[1], (tuple, list)):
+                raw_results = raw_results
+            else:
+                raw_results = first_elem
+        else:
+            raw_results = first_elem if first_elem else []
+    return raw_results if isinstance(raw_results, list) else []
+
 def order_points(pts):
     # Sort the points based on their x-coordinates
     xSorted = pts[np.argsort(pts[:, 0]), :]
@@ -134,8 +173,9 @@ def detect_and_crop_cheque(image):
     edged = cv2.dilate(edged, kernel, iterations=3)
     edged = cv2.erode(edged, kernel, iterations=1)
     
-    # Find all contours (RETR_LIST to ensure we don't miss the outer one if hierarchy is weird)
-    contours, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    # Find all contours safely across both OpenCV 3 and OpenCV 4
+    find_contours_res = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contours = find_contours_res[0] if len(find_contours_res) == 2 else find_contours_res[1]
     
     best_contour = None
     best_score = -1
@@ -237,9 +277,9 @@ def preprocess_for_ocr(image):
 def extract_bank_name(ocr_results, image_height):
     potential_banks = []
     
-    for bbox, (text, prob) in ocr_results:
-        clean_text = text.strip()
-        if prob < 0.1:
+    for item in ocr_results:
+        bbox, text, prob = _unpack_ocr_item(item)
+        if not bbox or not text or prob < 0.1:
             continue
             
         text_no_spaces = re.sub(r'[\s\-:,\.]', '', clean_text)
@@ -347,7 +387,10 @@ BANK_IFSC_PREFIX = {
 
 def extract_bank_name_with_fallback(ocr_results, image_height):
     # 1. Try finding IFSC first, as it's deterministic and highly accurate
-    for bbox, (text, prob) in ocr_results:
+    for item in ocr_results:
+        bbox, text, prob = _unpack_ocr_item(item)
+        if not bbox or not text:
+            continue
         clean_text = text.replace(" ", "")
         # Use lookahead to find all overlapping 11-char patterns
         matches = re.finditer(r'(?=([A-Z]{4}[0Oo][A-Z0-9]{6}))', clean_text, re.IGNORECASE)
@@ -437,8 +480,10 @@ def extract_final_details(first_ocr, second_ocr, bank_name):
     all_ocr = first_ocr + second_ocr
     
     # 1. Extract IFSC Code
-    for bbox, (text, prob) in all_ocr:
-        if prob < 0.1: continue
+    for item in all_ocr:
+        bbox, text, prob = _unpack_ocr_item(item)
+        if not bbox or not text or prob < 0.1:
+            continue
         clean_text = text.strip()
         text_no_spaces = re.sub(r'[\s\-:,\./]', '', clean_text)
         
@@ -493,18 +538,23 @@ def extract_final_details(first_ocr, second_ocr, bank_name):
     # First, try to locate the physical center of the Account Number label if it's in its own box
     ac_label_center = None
     import math
-    for bbox, (text, prob) in all_ocr:
-        if prob < 0.1: continue
-        # Look for explicit labels
+    for item in all_ocr:
+        bbox, text, prob = _unpack_ocr_item(item)
+        if not bbox or not text or prob < 0.1:
+            continue
         if re.search(r'(?i)\b(A/C|A\\C|AC|ACCOUNT|ACC|SB)\b', text.replace('.', '').replace('/', '')):
             xs = [p[0] for p in bbox]
             ys = [p[1] for p in bbox]
-            ac_label_center = (sum(xs)/4.0, sum(ys)/4.0)
+            ac_label_center = (sum(xs) / 4.0, sum(ys) / 4.0)
             break
-            
+
+    # 3. Extract Account Number
     potential_accounts = []
-    for bbox, (text, prob) in all_ocr:
-        if prob < 0.1: continue
+    
+    for item in all_ocr:
+        bbox, text, prob = _unpack_ocr_item(item)
+        if not bbox or not text or prob < 0.1:
+            continue
         clean_text = text.strip()
         
         # Rule 4: Do NOT include IFSC code, MICR code, phone number, cheque number, CIF, etc.
@@ -614,9 +664,7 @@ def extract_cheque_from_file(file_input):
     top_40_img = processed_img[0:int(0.40 * h), 0:w]
     top_40_scaled = _safe_scale_for_ocr(top_40_img, max_dim=2000)
     
-    full_ocr_results = reader.ocr(top_40_scaled)
-    full_ocr_results = full_ocr_results[0] if full_ocr_results and full_ocr_results[0] else []
-
+    full_ocr_results = normalize_paddle_ocr_results(reader.ocr(top_40_scaled))
     height = top_40_scaled.shape[0]
     bank_name = extract_bank_name_with_fallback(full_ocr_results, height)
 
@@ -627,11 +675,8 @@ def extract_cheque_from_file(file_input):
     second_roi = _safe_scale_for_ocr(rois.get("Second Part", np.zeros((10, 10, 3), dtype=np.uint8)), max_dim=2000)
 
     # Step 6 — OCR on ROIs
-    first_ocr  = reader.ocr(first_roi)
-    first_ocr  = first_ocr[0]  if first_ocr  and first_ocr[0]  else []
-
-    second_ocr = reader.ocr(second_roi)
-    second_ocr = second_ocr[0] if second_ocr and second_ocr[0] else []
+    first_ocr  = normalize_paddle_ocr_results(reader.ocr(first_roi))
+    second_ocr = normalize_paddle_ocr_results(reader.ocr(second_roi))
 
     # Step 7 — Extract final details
     return extract_final_details(first_ocr, second_ocr, bank_name)
