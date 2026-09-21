@@ -456,7 +456,7 @@ def extract_pan_details(image_path):
     father_name = None
     dob = None
     
-    pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b')
+    pan_pattern = re.compile(r'[A-Z]{5}[0-9]{4}[A-Z]')
     dob_pattern = re.compile(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b')
     
     # 1. Parse PAN number
@@ -516,7 +516,32 @@ def extract_pan_details(image_path):
     print("-----------------------------")
     return {"pan_number": pan_number, "name": name, "father_name": father_name, "dob": dob}
 
-VALID_PREFIXES = ["CIUB", "HDFC", "ICIC", "UTIB", "SBIN", "PUNB", "CNRB", "BARB", "YESB", "KKBK", "UBIN", "IDIB", "FDRL", "INDB", "IBKL", "SIBL"]
+IFSC_BANK_MAP = {
+    "SBIN": "State Bank of India",
+    "CNRB": "Canara Bank",
+    "FDRL": "Federal Bank",
+    "ICIC": "ICICI Bank",
+    "HDFC": "HDFC Bank",
+    "UTIB": "Axis Bank",
+    "PUNB": "Punjab National Bank",
+    "BARB": "Bank of Baroda",
+    "YESB": "Yes Bank",
+    "KKBK": "Kotak Mahindra Bank",
+    "UBIN": "Union Bank of India",
+    "IDIB": "Indian Bank",
+    "INDB": "IndusInd Bank",
+    "IBKL": "IDBI Bank",
+    "SIBL": "South Indian Bank",
+    "CIUB": "City Union Bank",
+    "BKID": "Bank of India",
+    "CBIN": "Central Bank of India",
+    "IOBA": "Indian Overseas Bank",
+    "MAHB": "Bank of Maharashtra",
+    "PSIB": "Punjab & Sind Bank",
+    "UCOB": "UCO Bank"
+}
+
+VALID_PREFIXES = list(IFSC_BANK_MAP.keys())
 
 def extract_bank_details(file_path):
     """
@@ -533,6 +558,12 @@ def extract_bank_details(file_path):
         return None
         
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Auto-rotate portrait cheque images to landscape
+    h, w = gray.shape
+    if h > w:
+        # Cheques are typically landscape. If uploaded vertically, rotate it 90 degrees counter-clockwise.
+        gray = cv2.rotate(gray, cv2.ROTATE_90_COUNTERCLOCKWISE)
     
     # 1. Resize image (2x) to make dense small print (like IFSC, address) much clearer
     resized = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
@@ -597,13 +628,18 @@ def extract_bank_details(file_path):
             line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line)
             line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line_cleaned) # double pass
             
-            # Extract all digit sequences between 9 and 18 digits
             digits = re.findall(r'\b(\d{9,18})\b', line_cleaned)
             for d in digits:
                 score = 5
+                
+                # Penalize 9 digit numbers (often MICR codes) unless explicitly marked
+                if len(d) == 9:
+                    score = 2
+                    
                 # Boost score if line has account keywords
                 if any(kw in line.lower() for kw in ['a/c', 'account', 'acc', 'no', 'num', 'number']):
-                    score = 10
+                    score = 15
+                    
                 candidates.append((score, d))
                 
     if candidates:
@@ -611,17 +647,30 @@ def extract_bank_details(file_path):
         account_number = candidates[0][1]
             
     # C. Heuristics for Bank Name
-    for pas in all_passes:
-        pas_upper = pas.upper()
-        if "CITY UNION BANK" in pas_upper or "CUB" in pas_upper or "UNION BANK" in pas_upper:
-            bank_name = "CITY UNION BANK"
-            break
-        elif "HDFC" in pas_upper:
-            bank_name = "HDFC BANK"
-            break
-        elif "ICICI" in pas_upper:
-            bank_name = "ICICI BANK"
-            break
+    if ifsc:
+        prefix = ifsc[:4]
+        if prefix in IFSC_BANK_MAP:
+            bank_name = IFSC_BANK_MAP[prefix]
+            
+    if not bank_name:
+        for pas in all_passes:
+            pas_upper = pas.upper()
+            for prefix, name in IFSC_BANK_MAP.items():
+                if name.upper() in pas_upper:
+                    bank_name = name
+                    break
+            if bank_name:
+                break
+            
+            if "CITY UNION BANK" in pas_upper or "CUB" in pas_upper:
+                bank_name = "City Union Bank"
+                break
+            elif "HDFC" in pas_upper:
+                bank_name = "HDFC Bank"
+                break
+            elif "ICICI" in pas_upper:
+                bank_name = "ICICI Bank"
+                break
             
     # D. ICICI Bank Specific Branch Fallback
     if bank_name == "ICICI BANK" and not ifsc and account_number and len(account_number) == 12:
@@ -631,11 +680,13 @@ def extract_bank_details(file_path):
     print(f"\n--- EXTRACTED BANK DETAILS ({os.path.basename(file_path)}) ---")
     print("IFSC Code      :", ifsc)
     print("Account Number :", account_number)
-    print("-------------------------------------------------------------")
+    print("Bank Name      :", bank_name)
+    print("-----------------------------------")
     
     return {
-        "ifsc": ifsc,
-        "account_number": account_number
+        "ifsc_code": ifsc,
+        "account_number": account_number,
+        "bank_name": bank_name
     }
 
 if __name__ == '__main__':

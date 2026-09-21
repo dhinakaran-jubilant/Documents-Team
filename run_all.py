@@ -48,7 +48,7 @@ def run_app():
     # 1. Start Backend (Flask)
     print(f"[*] Starting Backend (Flask) from {backend_dir}...")
     backend_process = subprocess.Popen(
-        [python_exe, 'app.py'],
+        [python_exe, '-u', 'app.py'],
         cwd=backend_dir,
         env=env
     )

@@ -11,6 +11,14 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+import sys
+
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+
+for k in list(sys.modules.keys()):
+    if k.startswith('google.protobuf'):
+        del sys.modules[k]
+
 import tempfile
 import atexit
 import shutil
@@ -23,9 +31,12 @@ from utils.pdf_generator import process_excel_to_pdfs, create_zip_archive
 from utils.promissory_generator import fill_promissory_note_docx, fill_letterpad_docx, fill_ltrl_docx, fill_letter_of_undertaking_docx
 import requests
 import sys
+import pathlib
+from pan_extractor import extract_pan_details_from_image
+from aadhaar_extractor import detect_and_split_aadhaar, extract_aadhaar_fields, process_aadhaar_image
 # Add parent directory to sys.path so we can import extract_
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from extract_ import extract_bank_details
+from cheque_extrator import extract_cheque_from_file
 
 tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 if os.path.exists(tesseract_path):
@@ -226,6 +237,11 @@ def extract_address_from_ocr(texts):
                             if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
                                 continue
                             
+                            # Filter left-side Aadhaar bleed-over
+                            addr_line = re.sub(r'\b(?:male|female)\s*/?\s*(?:male|female)?\b', '', addr_line, flags=re.IGNORECASE)
+                            addr_line = re.sub(r'\b(?:dob|date of birth|year of birth|yob)\s*[:\-]?\s*[\d/]*\b', '', addr_line, flags=re.IGNORECASE)
+                            addr_line = re.sub(r'\b(?:name|father|husband)\s*[:\-]\s*', '', addr_line, flags=re.IGNORECASE)
+                            
                             # Filter Hindi gibberish (keep uppercase, titlecase, digits, punctuation)
                             words_in_line = addr_line.split()
                             clean_words = []
@@ -317,6 +333,11 @@ def extract_address_from_ocr(texts):
                     if re.search(r'\b\d{2}/\d{2}/\d{4}\b', addr_line):
                         continue
                     
+                    # Filter left-side Aadhaar bleed-over
+                    addr_line = re.sub(r'\b(?:male|female)\s*/?\s*(?:male|female)?\b', '', addr_line, flags=re.IGNORECASE)
+                    addr_line = re.sub(r'\b(?:dob|date of birth|year of birth|yob)\s*[:\-]?\s*[\d/]*\b', '', addr_line, flags=re.IGNORECASE)
+                    addr_line = re.sub(r'\b(?:name|father|husband)\s*[:\-]\s*', '', addr_line, flags=re.IGNORECASE)
+                    
                     words_in_line = addr_line.split()
                     clean_words = []
                     for w in words_in_line:
@@ -379,13 +400,13 @@ def extract_address_from_ocr(texts):
         
         best_name = None
         if heuristic_a_results:
-            # Sort ascending by length: the shortest valid address has the least horizontal noise
-            heuristic_a_results.sort(key=lambda x: len(x[0]))
+            # Sort descending by length: the longest valid address is usually the most complete
+            heuristic_a_results.sort(key=lambda x: len(x[0]), reverse=True)
             best_name = heuristic_a_results[0][1]
             
         if heuristic_b_results:
-            # Sort ascending by length: the shortest valid address has the least horizontal noise
-            heuristic_b_results.sort(key=lambda x: len(x[0]))
+            # Sort descending by length: the longest valid address is usually the most complete
+            heuristic_b_results.sort(key=lambda x: len(x[0]), reverse=True)
             return heuristic_b_results[0][0], best_name
             
         if heuristic_a_results:
@@ -464,92 +485,105 @@ def clean_pan_field(val):
 
 def extract_pan_details_from_img(file_path, img):
     """
-    Crops the PAN card first, then runs robust multi-pass OCR to extract
-    the PAN number, Cardholder Name, Father's Name, and Date of Birth.
+    Delegates robust PAN extraction to the new pan_extractor module while preserving
+    the exact dict return shape expected by app.py.
     """
-    cropped = crop_only_card(img)
-    if cropped is None:
-        cropped = img
-        
-    config_3 = '--oem 3 --psm 3'
-    config_6 = '--oem 3 --psm 6'
-    
     try:
-        text_3 = pytesseract.image_to_string(cropped, config=config_3)
-        text_6 = pytesseract.image_to_string(cropped, config=config_6)
-        text_color = pytesseract.image_to_string(img)
-    except Exception as e:
-        text_3, text_6, text_color = "", "", ""
+        from pathlib import Path
+        path_obj = Path(file_path)
         
-    all_passes = [text_3, text_6, text_color]
-    full_text = "\n".join(all_passes)
-    
-    pan_number = None
-    name = None
-    father_name = None
-    dob = None
-    
-    pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b')
-    dob_pattern = re.compile(r'\b\d{2}[-/\.]\d{2}[-/\.]\d{4}\b')
-    
-    # 1. Parse PAN number
-    for pas in all_passes:
-        clean_pas = re.sub(r'\s+', ' ', pas)
-        words = clean_pas.split()
-        for w in words:
-            w_clean = re.sub(r'\s+', '', w).upper()
-            w_clean = w_clean.strip(".,:-_`'\"|()")
-            if pan_pattern.match(w_clean):
-                pan_number = w_clean
-                break
-        if pan_number:
-            break
-            
-    # 2. Parse DOB
-    for pas in all_passes:
-        match = dob_pattern.search(pas)
-        if match:
-            dob = match.group(0)
-            break
-            
-    # 3. Parse Cardholder Name
-    for pas in all_passes:
-        lines = [l.strip() for l in pas.split("\n") if l.strip()]
-        for idx, line in enumerate(lines):
-            # Check for cardholder name label strictly excluding father/mother/husband/ather/parent keywords
-            if ("name" in line.lower() or "ta /name" in line.lower()) and not any(k in line.lower() for k in ["father", "mother", "husband", "parent", "ather"]):
-                for offset in range(1, 3):
-                    if idx + offset < len(lines):
-                        potential_name = clean_pan_field(lines[idx + offset])
-                        if potential_name and re.fullmatch(r"[A-Z\s]{3,}", potential_name) and "income" not in potential_name.lower():
-                            name = potential_name
-                            break
-                if name:
-                    break
-                    
-    # 4. Parse Father's Name
-    for pas in all_passes:
-        lines = [l.strip() for l in pas.split("\n") if l.strip()]
-        for idx, line in enumerate(lines):
-            if "father" in line.lower() or "ather's name" in line.lower() or "relation" in line.lower() or "parent" in line.lower():
-                for offset in range(1, 3):
-                    if idx + offset < len(lines):
-                        potential_fname = clean_pan_field(lines[idx + offset])
-                        if potential_fname and re.fullmatch(r"[A-Z\s]{3,}", potential_fname) and "income" not in potential_fname.lower():
-                            father_name = potential_fname
-                            break
-                if father_name:
-                    break
+        # The pan_extractor module already does its own card detection and cropping internally,
+        # so we just pass the original image path.
 
-    return {
-        "document_type": "pan",
-        "name": name,
-        "father_name": father_name,
-        "pan_number": pan_number,
-        "dob": dob,
-        "address": None,
-        "raw_text": full_text
-    }
+        # Call new module with the global tesseract_path
+        details = extract_pan_details_from_image(path_obj, tesseract_cmd=tesseract_path)
+        
+        name = details.name
+        father_name = details.fathers_name
+        
+        # Fallback: if only one name was found and misassigned as father_name due to OCR missing a line
+        # This is commented out because it causes valid father names to be incorrectly moved to the proprietor name field
+        # if the proprietor name line was completely missed by OCR.
+        # if not name and father_name:
+        #     name = father_name
+        #     father_name = ""
+
+        return {
+            "document_type": "pan",
+            "name": name,
+            "father_name": father_name,
+            "pan_number": details.pan_number,
+            "dob": None,       # New module doesn't extract DOB
+            "address": None,   # New module doesn't extract address
+            "raw_text": ""     # No longer relying on a single raw_text blob
+        }
+    except Exception as e:
+        # Fallback to gracefully-empty shape on any exception to avoid crashing
+        print(f"Error in new PAN extractor: {e}")
+        return {
+            "document_type": "pan",
+            "name": None,
+            "father_name": None,
+            "pan_number": None,
+            "dob": None,
+            "address": None,
+            "raw_text": ""
+        }
+
+def extract_aadhaar_details_from_img(file_path, img):
+    """
+    Routes Aadhaar card images through the dedicated aadhaar_extractor pipeline.
+    Uses detect_and_split_aadhaar to separate front/back, then extract_aadhaar_fields
+    to pull Name, Father's Name, and Address.
+    Returns a dict in the same shape as the rest of the extraction routes.
+    """
+    try:
+        fields = process_aadhaar_image(img)
+        if not fields:
+            raise ValueError("process_aadhaar_image returned None")
+
+
+        print(f"[AADHAAR DEBUG] Raw fields from extractor:")
+        print(f"  name        = {fields.get('name')}")
+        print(f"  fathers_name= {fields.get('fathers_name')}")
+        print(f"  address     = {fields.get('address')}")
+
+        name        = (fields.get("name") or "").strip().upper() or None
+        father_name = (fields.get("fathers_name") or "").strip().upper() or None
+        address     = fields.get("address") or None
+
+        # Derive place/district from the last meaningful address segment before PIN
+        place = None
+        if address:
+            parts = [p.strip() for p in address.split(',')]
+            pin_idx = next((i for i, p in enumerate(parts) if re.search(r'\b\d{6}\b', p)), -1)
+            if pin_idx >= 2:
+                place = parts[pin_idx - 1].strip()
+            elif pin_idx >= 1:
+                place = parts[pin_idx - 1].strip()
+
+        return {
+            "document_type": "aadhaar",
+            "name":        name,
+            "father_name": father_name,
+            "address":     address,
+            "place":       place,
+            "district":    place,
+            "raw_text":    "",
+        }
+    except Exception as e:
+        print(f"Error in aadhaar_extractor pipeline: {e}")
+        # Return an empty dict (but with document_type set) so that we NEVER fall back 
+        # to the legacy OCR which hallucinates garbage data.
+        return {
+            "document_type": "aadhaar",
+            "name":        None,
+            "father_name": None,
+            "address":     None,
+            "place":       None,
+            "district":    None,
+            "raw_text":    "",
+        }
 
 def extract_text_from_img(file_path):
     """
@@ -580,299 +614,49 @@ def extract_text_from_img(file_path):
     pan_pattern = re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b')
     if any(k in lower_text for k in ["permanent", "income tax", "department", "pancard", "permanent account"]) or pan_pattern.search(first_pass_text.upper()):
         is_pan = True
+        
+    # Check if first_pass_text strongly indicates an Aadhaar card
+    is_aadhaar_card = False
+    lower_first_pass = first_pass_text.lower()
+    aadhaar_keywords = [
+        "aadhaar", "aadhar", "government of india", "unique identification",
+        "uidai", "address :", "address:", "mobile no", "year of birth",
+        "enrolment", "enrollment"
+    ]
+    has_12digit = bool(re.search(r'\b\d{4}\s\d{4}\s\d{4}\b', first_pass_text))
+    has_dob_gender = ("dob" in lower_first_pass or "year of birth" in lower_first_pass) and \
+                     ("male" in lower_first_pass or "female" in lower_first_pass)
+    if has_12digit or has_dob_gender or any(kw in lower_first_pass for kw in aadhaar_keywords):
+        is_aadhaar_card = True
+        is_pan = False  # Force it to false even if a fake PAN regex matched
+
+    # Check if first_pass_text strongly indicates a GST certificate
+    is_gst_card = False
+    if re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Zz]{1}[A-Z\d]{1}\b", first_pass_text.upper()) or any(re.search(rf"\b{k}\b", lower_text) for k in ["gst", "goods and services tax", "gstin"]):
+        is_gst_card = True
+        is_pan = False
+
+    # Route to the new aadhaar_extractor pipeline when the card is identified as Aadhaar
+    if is_aadhaar_card and not is_gst_card:
+        return extract_aadhaar_details_from_img(file_path, img)
+
+    # The new robust PAN extractor works very well, even on images where the
+    # weak first_pass_text fails. Run it, and if it successfully finds a
+    # PAN number, definitively return it as a PAN. However, we must skip this
+    # if it's definitively an Aadhaar or GST card to prevent Tesseract hallucinations.
+    if not is_aadhaar_card and not is_gst_card:
+        pan_result = extract_pan_details_from_img(file_path, img)
+        if pan_result.get("pan_number"):
+            return pan_result
 
     if is_pan:
         return extract_pan_details_from_img(file_path, img)
 
-    # Scale up small images to improve OCR accuracy on tiny text blocks
-    if w < 1500:
-        scale = 1500 / w
-        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape
-
-    custom_config_6 = r'--oem 3 --psm 6'
-    custom_config_3 = r'--oem 3 --psm 3'
-
-    # Perform a default color pass (extremely clean on portrait scans)
-    try:
-        default_text = pytesseract.image_to_string(img)
-    except Exception:
-        default_text = ""
-
-    # Always generate full passes and split passes to handle both single-column and double-column formats
-    # Create overlapping crops to guarantee we don't slice characters at the boundary
-    split_idx_left = int(w * 0.60)
-    split_idx_right = int(w * 0.40)
-    left_half = gray[:, :split_idx_left]
-    right_half = gray[:, split_idx_right:]
-    
-    mid_idx = w // 2
-    left_50 = gray[:, :mid_idx]
-    right_50 = gray[:, split_idx_right:] # Overlap this too for safety
-    
-    left_50_text_box = left_50[:, :int(left_50.shape[1] * 0.75)]
-    right_50_text_box = right_50[:, :int(right_50.shape[1] * 0.75)]
-
-    left_bottom = left_half[h//2:, :]
-    right_bottom = right_half[h//2:, :]
-    
-    # The back of the Aadhaar card (right_bottom) has two columns (Tamil on left, English on right).
-    # We must split it again to isolate the pure English "Address:" block.
-    rb_w = right_bottom.shape[1]
-    right_bottom_english = right_bottom[:, int(rb_w * 0.40):]
-
-    try:
-        left_bottom_text_6 = pytesseract.image_to_string(left_bottom, config=custom_config_6)
-        left_bottom_text_3 = pytesseract.image_to_string(left_bottom, config=custom_config_3)
-        right_bottom_text_6 = pytesseract.image_to_string(right_bottom, config=custom_config_6)
-        right_bottom_text_3 = pytesseract.image_to_string(right_bottom, config=custom_config_3)
+    # Catch-all: If it's not a PAN or GST card, assume it's an Aadhaar and use the strict extractor.
+    if not is_gst_card and not is_pan:
+        return extract_aadhaar_details_from_img(file_path, img)
         
-        right_bottom_english_text_6 = pytesseract.image_to_string(right_bottom_english, config=custom_config_6)
-        
-        left_text_6 = pytesseract.image_to_string(left_half, config=custom_config_6)
-        left_text_3 = pytesseract.image_to_string(left_half, config=custom_config_3)
-        right_text_6 = pytesseract.image_to_string(right_half, config=custom_config_6)
-        right_text_3 = pytesseract.image_to_string(right_half, config=custom_config_3)
-        
-        left_50_text_6 = pytesseract.image_to_string(left_50, config=custom_config_6)
-        right_50_text_6 = pytesseract.image_to_string(right_50, config=custom_config_6)
-        
-        left_50_text_box_6 = pytesseract.image_to_string(left_50_text_box, config=custom_config_6)
-        right_50_text_box_6 = pytesseract.image_to_string(right_50_text_box, config=custom_config_6)
-        
-        full_text_6 = pytesseract.image_to_string(gray, config=custom_config_6)
-        full_text_3 = pytesseract.image_to_string(gray, config=custom_config_3)
-
-    except Exception as e:
-        return {"error": f"OCR Engine Error: {str(e)}", "name": None, "raw_text": ""}
-        
-    front_texts = [default_text, left_50_text_box_6, left_50_text_6, full_text_3, full_text_6, left_bottom_text_3, left_bottom_text_6, left_text_3, left_text_6]
-    
-    if w > h:
-        all_texts = [
-            right_bottom_english_text_6,
-            right_50_text_box_6, left_50_text_box_6,
-            right_50_text_6, left_50_text_6,
-            left_bottom_text_6, left_bottom_text_3,
-            right_bottom_text_6, right_bottom_text_3,
-            left_text_6, left_text_3,
-            right_text_6, right_text_3,
-            default_text,
-            full_text_6, full_text_3
-        ]
-    else:
-        all_texts = [
-            right_50_text_box_6, left_50_text_box_6,
-            right_50_text_6, left_50_text_6,
-            left_bottom_text_6, left_bottom_text_3,
-            right_bottom_text_6, right_bottom_text_3,
-            left_text_6, left_text_3,
-            right_text_6, right_text_3,
-            default_text,
-            full_text_6, full_text_3
-        ]
-
-    text = "\n".join([t for t in all_texts if t])
-
-    # Parse Card Fields from front texts specifically
-    name = None
-    debug_log = []
-    extracted_fields = {
-        "dob": None,
-        "gender": None,
-        "aadhaar": None,
-        "vid": None,
-        "address": None
-    }
-
-    # Regex patterns
-    dob_pattern = re.compile(r'\b\d{2}/\d{2}/\d{4}\b')
-    # Support YOB (4-digit year like 1967)
-    yob_pattern = re.compile(r'\b(19\d{2}|20\d{2})\b')
-    aadhaar_pattern = re.compile(r'\b\d{4}\s\d{4}\s\d{4}\b')
-    vid_pattern = re.compile(r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b')
-
-    dob_names = []
-    
-    # 2. Extract specific fields from different OCR passes
-    for text_pass in front_texts:
-        if not text_pass:
-            continue
-        lines = [line.strip() for line in text_pass.split("\n") if line.strip()]
-        for idx, line in enumerate(lines):
-            cleaned_line = line.strip(".,:-_`'\" ")
-            
-            # DOB backtracking for name (Most reliable heuristic)
-            if re.search(r'\b(?:DOB|D\.O\.B|Year of Birth|YOB|Date of Birth)[\s:]*([0-9]{2,4})', cleaned_line, re.IGNORECASE) or re.search(r'\b[0-9]{2}/[0-9]{2}/[0-9]{4}\b', cleaned_line):
-                # Look back up to 3 lines for the name
-                for k in range(idx - 1, max(-1, idx - 4), -1):
-                    prev_line = lines[k].strip(".,:-_`'\" ")
-                    if not prev_line or "Government" in prev_line or "India" in prev_line or "Male" in prev_line or "Female" in prev_line:
-                        continue
-                    if re.search(r'[a-z]', prev_line) and re.fullmatch(r"[A-Za-z\.\s]+", prev_line):
-                        candidate_name = clean_extracted_name(prev_line)
-                        if candidate_name:
-                            dob_names.append(candidate_name)
-                            break
-                            
-            # Explicit YOB matching fallback
-            if "Year of Birth" in line or "YOB" in line:
-                for k in range(idx - 1, max(-1, idx - 4), -1):
-                    prev_line = lines[k].strip(".,:-_`'\" ")
-                    if not prev_line or "Government" in prev_line or "India" in prev_line or "Male" in prev_line or "Female" in prev_line:
-                        continue
-                    if re.search(r'[a-z]', prev_line) and re.fullmatch(r"[A-Za-z\.\s]+", prev_line):
-                        candidate_name = clean_extracted_name(prev_line)
-                        if candidate_name:
-                            dob_names.append(candidate_name)
-                            break
-                            
-            # b. Gender Match
-            if "male" in line.lower() or "female" in line.lower():
-                gender = "FEMALE" if "female" in line.lower() else "MALE"
-                extracted_fields["gender"] = gender
-
-            # c. Aadhaar Number Match
-            if aadhaar_pattern.search(line) and "vid" not in line.lower():
-                match = aadhaar_pattern.search(line)
-                extracted_fields["aadhaar"] = match.group(0)
-
-            # d. VID Match
-            if vid_pattern.search(line) or "vid" in line.lower():
-                match = vid_pattern.search(line)
-                if match:
-                    extracted_fields["vid"] = f"VID : {match.group(0)}"
-                elif re.search(r'\d{4}', line):
-                    digits = "".join(re.findall(r'\d', line))
-                    if len(digits) >= 16:
-                        groups = [digits[i:i+4] for i in range(0, 16, 4)]
-                        extracted_fields["vid"] = f"VID : {' '.join(groups)}"
-
-    if dob_names:
-        from collections import Counter
-        name = Counter(dob_names).most_common(1)[0][0]
-
-    # Extract the address first so we don't accidentally pick parts of it as the name
-    address, name_from_addr = extract_address_from_ocr(all_texts)
-    debug_log.append(f"Heuristics returned address: {bool(address)}, name_from_addr: {name_from_addr}")
-    if not name and name_from_addr:
-        name = name_from_addr
-        debug_log.append(f"Name set by name_from_addr: {name}")
-
-    # Fallback to general line-by-line checks if DOB match not found
-    if not name:
-        debug_log.append("Entering fallback name extraction")
-        skip_keywords = {
-            "government", "india", "dob", "male", "female", 
-            "download", "issue", "vid", "address", "enrollment",
-            "father", "mother", "husband", "wife", "year", "birth",
-            "street", "nagar", "road", "main", "cross", "flat", "door", 
-            "district", "state", "pin", "code", "tamil", "nadu", "chennai", 
-            "kancheepuram", "taluk", "village", "post", "mandal", "marg", 
-            "bhawan", "lane", "colony", "apartment"
-        }
-        
-        # If we extracted an address, don't accidentally pick parts of the address as the name
-        if address:
-            addr_lower = address.lower()
-        else:
-            addr_lower = ""
-            
-        candidate_names = []
-        for text_pass in front_texts:
-            if not text_pass:
-                continue
-            lines = [line.strip() for line in text_pass.split("\n") if line.strip()]
-            for line in lines:
-                cleaned_line = line.strip(".,:-_`'\" ")
-
-                # Skip if this line is part of the address we already extracted
-                if addr_lower and cleaned_line.lower() in addr_lower:
-                    continue
-
-                if any(word in cleaned_line.lower() for word in skip_keywords):
-                    continue
-                if re.fullmatch(r"[A-Za-z\.\s]{3,}", cleaned_line):
-                    words = cleaned_line.split()
-                    if 1 <= len(words) <= 4:
-                        candidate_name = clean_extracted_name(cleaned_line)
-                        if candidate_name:
-                            candidate_names.append(candidate_name)
-                            break # Move to next OCR pass after finding a name candidate
-                            
-        if candidate_names:
-            from collections import Counter
-            name = Counter(candidate_names).most_common(1)[0][0]
-            debug_log.append(f"Name set by fallback Counter: {name}")
-    
-    debug_log.append(f"Final name: {name}")
-    with open("name_debug_log.txt", "w") as f:
-        f.write("\n".join(debug_log))
-        
-    father_name = None
-    # 1. Highly robust raw text search over all passes (handles OCR misreads and contour crop failures)
-    father_pattern = re.compile(
-        r'\b(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|Father(?:\'s)?(?:\s+Name)?\b|Husband(?:\'s)?(?:\s+Name)?\b|Mother(?:\'s)?(?:\s+Name)?\b)[\s:\-]*([A-Z][A-Za-z\s\.\-]{2,40})',
-        re.IGNORECASE
-    )
-    valid_candidates = []
-    for match in father_pattern.finditer(text):
-        candidate = match.group(1).split('\n')[0].strip(" .,:-_`'\"|")
-        # Exclude common address/footer keywords to ensure high precision
-        if not candidate or any(k in candidate.lower() for k in ["address", "pin", "code", "near", "opposite", "floor", "house", "ward"]):
-            continue
-        valid_candidates.append(candidate)
-        
-    if valid_candidates:
-        # Fallback to the first candidate found
-        best_candidate = valid_candidates[0]
-        # Prefer candidates that are strictly Title Case or UPPERCASE to filter out OCR noise from regional text
-        for cand in valid_candidates:
-            clean_cand = cand.replace(" ", "").replace(".", "")
-            if clean_cand.isupper() or clean_cand.istitle():
-                best_candidate = cand
-                break
-        father_name = best_candidate
-
-    # 2. Fallback search anywhere in the clean address string
-    if not father_name and address:
-        match = re.search(r'\b(?:S/O|D/O|W/O|C/O|C/o|S/o|D/o|W/o|Care of|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]*([^,\n]+)', address, re.IGNORECASE)
-        if match:
-            father_name = match.group(1).strip(" .,:-_`'\"|")
-
-    # Clean the care-of relation from the start of the address
-    if address:
-        address = address.strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
-        address = re.sub(r'^(?:[SDWC5][\s/\\|1I\.]\s*[Oo0]\b|Care\s+of\b|SO|DO|WO|CO|DVO|SVO|WVO|CVO)[\s:\-]*[^,\n]+,?\s*', '', address, flags=re.IGNORECASE).strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
-        # Clean common OCR artifacts at the beginning of the address (e.g. 'Gg Thalakkulathil')
-        address = re.sub(r'^(?:Gg|Oo|0o|ll|1l|I1|ii|q|Qy)\s+', '', address, flags=re.IGNORECASE)
-        # Clean stray '&' which is often a misread of Malayalam loop characters
-        address = re.sub(r'\s+&\s+', ' ', address)
-        address = address.strip(" .,:-_`'\"|~‘’\u2018\u2019\ufffd")
-    # Derive place from address
-    place = None
-    if address:
-        dist_match = re.search(r'(?<!sub\s)(?<!sub-)\bDist(?:rict)?\s*[-:,]?\s*([^,\n]+)', address, re.IGNORECASE)
-        if dist_match:
-            place = dist_match.group(1).strip()
-        else:
-            parts = [p.strip() for p in address.split(',')]
-            if parts:
-                pin_idx = -1
-                for i, p in enumerate(parts):
-                    if re.search(r'\b\d{6}\b', p):
-                        pin_idx = i
-                        break
-                if pin_idx >= 1:
-                    pin_part = parts[pin_idx]
-                    if re.search(r'[A-Za-z]+\s*-\s*\d{6}', pin_part):
-                        place = parts[pin_idx - 1]
-                    else:
-                        if pin_idx >= 2:
-                            place = parts[pin_idx - 2]
-                            
-    return {"document_type": "aadhaar", "name": name, "father_name": father_name, "gender": extracted_fields.get("gender"), "address": address, "place": place, "district": place, "raw_text": text}
+    return {"document_type": "unknown", "name": None, "father_name": None, "gender": None, "address": None, "place": None, "district": None, "raw_text": ""}
 
 def parse_extracted_text(text):
     # Extract fields
@@ -990,35 +774,70 @@ def handle_extract_pdf():
                 temp_pdf_path = temp_pdf.name
                 
             result = extract_text_from_pdf(temp_pdf_path)
-            
+            print(f"[PDF DEBUG] extract_text_from_pdf result keys: {list(result.keys() if result else [])}")
+            print(f"[PDF DEBUG] has legal_name={result.get('legal_name')}, trade_name={result.get('trade_name')}, address={result.get('business_address')}, pan={result.get('pan_number')}")
+
             # Check if GST extraction yielded anything
             has_gst_data = any([
-                result.get('legal_name'), 
-                result.get('trade_name'), 
-                result.get('business_address'), 
+                result.get('legal_name'),
+                result.get('trade_name'),
+                result.get('business_address'),
                 result.get('pan_number')
             ])
-            
+            print(f"[PDF DEBUG] has_gst_data={has_gst_data}")
+
             if has_gst_data:
                 result["document_type"] = "gst"
+
             else:
                 # If no GST data was found, it might be an Aadhaar/PAN image saved as a PDF.
                 # Convert the first page to an image and run image extraction.
                 try:
-                    import pypdfium2 as pdfium
-                    with pdfium.PdfDocument(temp_pdf_path) as pdf:
-                        page = pdf[0]
-                        bitmap = page.render(scale=300/72) # 300 DPI
-                        pil_image = bitmap.to_pil()
+                    import fitz
+                    from PIL import Image
                     
+                    pdf_doc = fitz.open(temp_pdf_path)
+                    page = pdf_doc.load_page(0)
+                    pix = page.get_pixmap(dpi=300, alpha=True)
+                    
+                    mode = "RGBA" if pix.alpha else "RGB"
+                    pil_image = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                    
+                    if pil_image.mode == 'RGBA':
+                        bg = Image.new("RGB", pil_image.size, (255, 255, 255))
+                        bg.paste(pil_image, mask=pil_image.split()[3])
+                        pil_image = bg
+                        
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as temp_img:
                         pil_image.save(temp_img.name)
                         temp_img_path = temp_img.name
+                        
+                    pdf_doc.close()
                     
                     result = extract_text_from_img(temp_img_path)
                     
                     if os.path.exists(temp_img_path):
                         os.remove(temp_img_path)
+
+                    # Normalise: map internal keys → frontend-expected keys
+                    if result.get("document_type") == "aadhaar":
+                        result = {
+                            "document_type": "aadhaar",
+                            "legal_name":       result.get("name"),
+                            "father_name":      result.get("father_name"),
+                            "business_address": result.get("address"),
+                            "district":         result.get("district") or result.get("place"),
+                            "gender":           result.get("gender"),
+                        }
+                    elif result.get("document_type") == "pan":
+                        result = {
+                            "document_type":  "pan",
+                            "legal_name":     result.get("name"),
+                            "father_name":    result.get("father_name"),
+                            "pan_number":     result.get("pan_number"),
+                            "dob":            result.get("dob"),
+                            "business_address": None,
+                        }
                 except Exception as e:
                     result = {"error": f"Failed to process PDF as image: {str(e)}", "name": None, "raw_text": ""}
             
@@ -1029,6 +848,7 @@ def handle_extract_pdf():
             return jsonify({"success": True, "data": result})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
             
     # 2. Handle Images (PNG, JPG, JPEG, WEBP, BMP)
     elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')):
@@ -1062,6 +882,19 @@ def handle_extract_pdf():
                     "business_address": None
                 }
                 return jsonify({"success": True, "data": result})
+
+            # If document_type is Aadhaar, directly return the new extractor result
+            if ocr_res.get("document_type") == "aadhaar":
+                result = {
+                    "document_type": "aadhaar",
+                    "legal_name": ocr_res.get("name"),
+                    "father_name": ocr_res.get("father_name"),
+                    "business_address": ocr_res.get("address"),
+                    "district": ocr_res.get("district") or ocr_res.get("place"),
+                    "gender": ocr_res.get("gender"),
+                }
+                return jsonify({"success": True, "data": result})
+
 
             # Try to parse standard GST patterns from the image OCR text
             result = parse_extracted_text(raw_text)
@@ -1114,7 +947,40 @@ def extract_bank_details_from_ocr(text_or_passes):
     # Format: [A-Z]{4}0[A-Z0-9]{6}
     ifsc_pattern = re.compile(r'([A-Za-z]{4})[0-9Oo]([A-Za-z0-9]{6})')
     
-    VALID_PREFIXES = ["CIUB", "HDFC", "ICIC", "UTIB", "SBIN", "PUNB", "CNRB", "BARB", "YESB", "KKBK", "UBIN", "IDIB", "FDRL", "INDB", "IBKL", "SIBL"]
+    IFSC_BANK_MAP = {
+        "SBIN": "State Bank of India",
+        "CNRB": "Canara Bank",
+        "FDRL": "Federal Bank",
+        "ICIC": "ICICI Bank",
+        "HDFC": "HDFC Bank",
+        "UTIB": "Axis Bank",
+        "PUNB": "Punjab National Bank",
+        "BARB": "Bank of Baroda",
+        "YESB": "Yes Bank",
+        "KKBK": "Kotak Mahindra Bank",
+        "UBIN": "Union Bank of India",
+        "IDIB": "Indian Bank",
+        "INDB": "IndusInd Bank",
+        "IBKL": "IDBI Bank",
+        "SIBL": "South Indian Bank",
+        "CIUB": "City Union Bank",
+        "BKID": "Bank of India",
+        "CBIN": "Central Bank of India",
+        "IOBA": "Indian Overseas Bank",
+        "MAHB": "Bank of Maharashtra",
+        "PSIB": "Punjab & Sind Bank",
+        "UCBA": "UCO Bank",
+        "UCOB": "UCO Bank",
+        "KARB": "Karnataka Bank",
+        "TMBL": "Tamilnad Mercantile Bank",
+        "KVBL": "Karur Vysya Bank",
+        "BDBL": "Bandhan Bank",
+        "IDFB": "IDFC FIRST Bank",
+        "RATN": "RBL Bank",
+        "CSBK": "CSB Bank",
+        "DCBL": "DCB Bank",
+        "DLXB": "Dhanlaxmi Bank"
+    }
     
     for pas in all_passes:
         matches = ifsc_pattern.findall(pas)
@@ -1133,12 +999,10 @@ def extract_bank_details_from_ocr(text_or_passes):
             if part1 == "C1UB":
                 part1 = "CIUB"
                 
-            candidate_prefix = part1
-            if candidate_prefix in VALID_PREFIXES:
-                candidate_ifsc = f"{part1}0{part2}"
-                if len(candidate_ifsc) == 11:
-                    ifsc = candidate_ifsc
-                    break
+            candidate_ifsc = f"{part1}0{part2}"
+            if len(candidate_ifsc) == 11:
+                ifsc = candidate_ifsc
+                break
         if ifsc:
             break
             
@@ -1160,13 +1024,18 @@ def extract_bank_details_from_ocr(text_or_passes):
             line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line)
             line_cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', line_cleaned) # double pass
             
-            # Extract all digit sequences between 9 and 18 digits
             digits = re.findall(r'\b(\d{9,18})\b', line_cleaned)
             for d in digits:
                 score = 5
+                
+                # Penalize 9 digit numbers (often MICR codes) unless explicitly marked
+                if len(d) == 9:
+                    score = 2
+                    
                 # Boost score if line has account keywords
                 if any(kw in line.lower() for kw in ['a/c', 'account', 'acc', 'no', 'num', 'number']):
-                    score = 10
+                    score = 15
+                    
                 candidates.append((score, d))
                 
     if candidates:
@@ -1174,17 +1043,30 @@ def extract_bank_details_from_ocr(text_or_passes):
         account_number = candidates[0][1]
             
     # C. Heuristics for Bank Name
-    for pas in all_passes:
-        pas_upper = pas.upper()
-        if "CITY UNION BANK" in pas_upper or "CUB" in pas_upper or "UNION BANK" in pas_upper:
-            bank_name = "CITY UNION BANK"
-            break
-        elif "HDFC" in pas_upper:
-            bank_name = "HDFC BANK"
-            break
-        elif "ICICI" in pas_upper:
-            bank_name = "ICICI BANK"
-            break
+    if ifsc:
+        prefix = ifsc[:4]
+        if prefix in IFSC_BANK_MAP:
+            bank_name = IFSC_BANK_MAP[prefix]
+            
+    if not bank_name:
+        for pas in all_passes:
+            pas_upper = pas.upper()
+            for prefix, name in IFSC_BANK_MAP.items():
+                if name.upper() in pas_upper:
+                    bank_name = name
+                    break
+            if bank_name:
+                break
+            
+            if "CITY UNION BANK" in pas_upper or "CUB" in pas_upper:
+                bank_name = "City Union Bank"
+                break
+            elif "HDFC" in pas_upper:
+                bank_name = "HDFC Bank"
+                break
+            elif "ICICI" in pas_upper:
+                bank_name = "ICICI Bank"
+                break
             
     # D. ICICI Bank Specific Branch Fallback
     if bank_name == "ICICI BANK" and not ifsc and account_number and len(account_number) == 12:
@@ -1192,8 +1074,9 @@ def extract_bank_details_from_ocr(text_or_passes):
         ifsc = f"ICIC000{branch_code}"
 
     return {
-        "ifsc": ifsc,
-        "account_number": account_number
+        "ifsc_code": ifsc,
+        "account_number": account_number,
+        "bank_name": bank_name
     }
 
 @app.route('/extract-bank', methods=['POST'])
@@ -1205,46 +1088,61 @@ def handle_extract_bank():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
         
+    doc_type = request.form.get('type', 'Cheque')
     filename_lower = file.filename.lower()
     
     try:
         if filename_lower.endswith('.pdf'):
-            text = ""
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
                 file.save(temp_pdf.name)
                 temp_pdf_path = temp_pdf.name
-                
-            with pdfplumber.open(temp_pdf_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-                        
+
+            if doc_type == 'Normal':
+                text = ""
+                with pdfplumber.open(temp_pdf_path) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                details = extract_bank_details_from_ocr(text)
+            else:
+                details = extract_cheque_from_file(temp_pdf_path)
+
             if os.path.exists(temp_pdf_path):
                 os.remove(temp_pdf_path)
-                
-            details = extract_bank_details_from_ocr(text)
+
             return jsonify({"success": True, "data": details})
-                
+
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')):
             suffix = os.path.splitext(filename_lower)[1]
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_img:
                 file.save(temp_img.name)
                 temp_img_path = temp_img.name
-                
-            # Direct usage of extract_bank_details from extract_.py
-            details = extract_bank_details(temp_img_path)
-            
+
+            if doc_type == 'Normal':
+                try:
+                    from cheque_extrator import load_ocr_reader
+                    reader = load_ocr_reader()
+                    ocr_results = reader.ocr(temp_img_path)
+                    ocr_results = ocr_results[0] if ocr_results and ocr_results[0] else []
+                    text_lines = [res[1][0] for res in ocr_results if res[1][1] > 0.1]
+                    text = "\n".join(text_lines)
+                except Exception:
+                    text = ""
+                details = extract_bank_details_from_ocr(text)
+            else:
+                details = extract_cheque_from_file(temp_img_path)
+
             if os.path.exists(temp_img_path):
                 os.remove(temp_img_path)
-                
+
             if details is None:
-                return jsonify({"error": "Could not extract details from cheque"}), 400
-                
+                return jsonify({"error": "Could not extract details from document"}), 400
+
             return jsonify({"success": True, "data": details})
         else:
             return jsonify({"error": "Unsupported file format. Please upload a PDF or an Image."}), 400
-            
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1295,7 +1193,7 @@ def handle_generate_promissory_note():
             loan_missing = [f for f in ['lenderName', 'loanAmount', 'repayment'] if not loan.get(f)]
             if loan_missing:
                 return jsonify({"error": f"Loan #{idx + 1} is missing fields: {', '.join(loan_missing)}"}), 400
-            
+                 
         # Determine if we have any guarantors
         # A joinee is a guarantor if they have a non-empty name (excluding prefix titles like Mr./Mrs.)
         has_guarantor = False
@@ -1879,4 +1777,8 @@ def delete_documat_history(history_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True, port=2000, ssl_context=('cert.pem', 'key.pem'))
+    import os
+    if os.path.exists('cert.pem') and os.path.exists('key.pem'):
+        app.run(host='0.0.0.0', debug=True, port=5000, ssl_context=('cert.pem', 'key.pem'))
+    else:
+        app.run(host='0.0.0.0', debug=True, port=5000)

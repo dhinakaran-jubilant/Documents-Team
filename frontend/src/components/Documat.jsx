@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReactCrop from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+import { canvasPreview } from './canvasPreview';
 import Layout from './Layout';
 import config from './config';
 
@@ -28,6 +31,38 @@ const cleanDisplayLenderName = (name) => {
     return name.replace(/^(M\/S|M\/R|MRS|MR)(?:\.|\s)\s*/i, '').trim();
 };
 
+const calculateFuzzyMatch = (str1, str2) => {
+    if (!str1 || !str2) return 0;
+    
+    // Normalize strings: lowercase, remove non-alphanumeric, trim
+    const s1 = str1.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, ' ');
+    const s2 = str2.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, ' ');
+    
+    if (s1 === s2) return 1.0;
+    
+    // Simple Levenshtein distance
+    const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
+    for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+    
+    for (let j = 1; j <= s2.length; j += 1) {
+        for (let i = 1; i <= s1.length; i += 1) {
+            const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            track[j][i] = Math.min(
+                track[j][i - 1] + 1, // deletion
+                track[j - 1][i] + 1, // insertion
+                track[j - 1][i - 1] + indicator // substitution
+            );
+        }
+    }
+    
+    const distance = track[s2.length][s1.length];
+    const maxLength = Math.max(s1.length, s2.length);
+    return (maxLength - distance) / maxLength;
+};
+
+const NAME_MATCH_THRESHOLD = 0.80; // Configurable threshold for name verification
+
 const Documat = ({ user, onLogout, onTabChange }) => {
     const [step, setStep] = useState(1);
     const [selectedType, setSelectedType] = useState(null);
@@ -56,6 +91,15 @@ const Documat = ({ user, onLogout, onTabChange }) => {
         lenderName: '',
         repayment: '',
         signatureValid: false,
+        _panFatherNameCache: '', // hidden state for PAN's father_name fallback
+        _panNameCache: '',       // hidden state for PAN's proprietor name verification
+        _panNumberCache: '',     // hidden state for PAN's pan number verification
+        _panUploaded: false,
+        _aadhaarNameCache: '',
+        _aadhaarFatherNameCache: '',
+        _aadhaarUploaded: false,
+        panVerificationStatus: null, // null, 'verified', 'mismatched'
+        showMismatchOverlay: false,
     });
     const [joinees, setJoinees] = useState([]);
     const [loans, setLoans] = useState([
@@ -66,6 +110,15 @@ const Documat = ({ user, onLogout, onTabChange }) => {
     const [openDropdownIdx, setOpenDropdownIdx] = useState(null);
     const [dropdownDirection, setDropdownDirection] = useState({});
     const [lenderOptions, setLenderOptions] = useState([]);
+
+    const [cropImageSrc, setCropImageSrc] = useState('');
+    const [bankDocType, setBankDocType] = useState('Cheque');
+    const [crop, setCrop] = useState();
+    const [completedCrop, setCompletedCrop] = useState(null);
+    const [rotate, setRotate] = useState(0);
+    const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+    const [originalBankFile, setOriginalBankFile] = useState(null);
+    const imgRef = useRef(null);
 
     useEffect(() => {
         const fetchLenders = async () => {
@@ -337,94 +390,205 @@ const Documat = ({ user, onLogout, onTabChange }) => {
 
         setIsProcessing(true);
 
-        let batchedFormDataUpdates = {};
-
-        for (const file of selectedFiles) {
+        try {
+            const filePromises = selectedFiles.map(async (file) => {
             const data = new FormData();
             data.append('file', file);
-
             try {
                 const response = await fetch(`${config.API_BASE_URL}/extract-pdf`, {
                     method: 'POST',
                     body: data,
                 });
                 const result = await response.json();
-
                 if (result.success && result.data) {
-                    const docType = result.data.document_type;
-
-                    // 1. If it's a GST certificate, it's always the Proprietor
-                    if (docType === 'gst' && selectedType === 'Proprietor') {
-                        batchedFormDataUpdates = {
-                            ...batchedFormDataUpdates,
-                            companyName: result.data.trade_name || '',
-                            proprietorPan: result.data.pan_number || '',
-                            companyAddress: result.data.business_address ? toTitleCase(result.data.business_address) : '',
-                            place: result.data.district || '',
-                            signatureValid: result.data.signature_valid !== undefined ? result.data.signature_valid : false,
-                        };
-                        continue;
-                    }
-
-                    // 2. Extract and clean names for Aadhaar/PAN image routing
-                    const legalName = result.data.name || result.data.legal_name || '';
-                    const cleanName = legalName
-                        .split(/\s+/)
-                        .filter(part => part.replace(/\./g, '').length > 0)
-                        .join(' ')
-                        .toUpperCase();
-
-                    const fatherNameExtracted = result.data.father_name ? result.data.father_name.toUpperCase() : '';
-
-                    // Update Proprietor details unconditionally (since this is the proprietor upload handler)
-                    let updates = { ...batchedFormDataUpdates };
-                    
-                    if (result.data.gender) {
-                        updates.proprietorTitle = result.data.gender === 'MALE' ? 'Mr.' : 'Mrs.';
-                    }
-                    if (result.data.trade_name !== undefined) {
-                        updates.companyName = result.data.trade_name || '';
-                    }
-                    if (cleanName) {
-                        updates.proprietorName = cleanName;
-                    }
-                    if (fatherNameExtracted) {
-                        updates.fatherOfProprietor = fatherNameExtracted;
-                    }
-                    
-                    const extractedAddress = result.data.business_address || result.data.address;
-                    if (extractedAddress) {
-                        updates.companyAddress = toTitleCase(extractedAddress);
-                    }
-                    if (result.data.district) {
-                        updates.place = result.data.district;
-                    }
-                    if (result.data.signature_valid !== undefined) {
-                        updates.signatureValid = result.data.signature_valid;
-                    }
-                    
-                    if (docType === 'pan' && result.data.pan_number) {
-                        updates.proprietorPan = result.data.pan_number.toUpperCase();
-                    }
-                    
-                    batchedFormDataUpdates = updates;
-
+                    return { file, data: result.data };
                 } else {
                     console.error(result.error);
                     alert(`Failed to process ${file.name}: ${result.error}`);
+                    return null;
                 }
             } catch (error) {
                 console.error(`Error extracting ${file.name}:`, error);
                 alert(`Error connecting to server while processing ${file.name}`);
+                return null;
             }
-        }
+        });
 
-        // Apply all batched updates to React state functionally
-        if (Object.keys(batchedFormDataUpdates).length > 0) {
-            setFormData(prev => ({ ...prev, ...batchedFormDataUpdates }));
+        const results = await Promise.all(filePromises);
+        const validResults = results.filter(r => r !== null);
+
+        if (validResults.length > 0) {
+            setFormData(prev => {
+                let updates = { ...prev };
+                
+                const uploadedDocTypes = validResults.map(r => r.data.document_type);
+                const isSimultaneous = uploadedDocTypes.includes('pan') && uploadedDocTypes.includes('aadhaar');
+                
+                // Phase 1: Update the hidden caches based on the uploaded documents
+                for (const { data } of validResults) {
+                    const docType = data.document_type;
+                    
+                    if (docType === 'gst') {
+                        // GST strictly only updates Borrower Firm Name
+                        updates.companyName = '';
+                        if (data.trade_name) {
+                            updates.companyName = data.trade_name;
+                        }
+                    } else if (docType === 'pan') {
+                        updates._panUploaded = true;
+                        
+                        // Clear previous PAN caches
+                        updates._panNameCache = '';
+                        updates._panFatherNameCache = '';
+                        updates._panNumberCache = '';
+                        
+                        // If PAN is uploaded first (not simultaneous, and Aadhaar hasn't been uploaded yet)
+                        if (!isSimultaneous && !prev._aadhaarUploaded) {
+                            updates._isPanFirstSequence = true;
+                        }
+                        
+                        if (data.pan_number) {
+                            updates._panNumberCache = data.pan_number.toUpperCase();
+                        }
+                        if (data.legal_name || data.name) {
+                            updates._panNameCache = (data.legal_name || data.name).toUpperCase();
+                        }
+                        if (data.father_name) {
+                            updates._panFatherNameCache = data.father_name.toUpperCase();
+                        }
+                    } else if (docType === 'aadhaar') {
+                        updates._aadhaarUploaded = true;
+                        
+                        // Clear previous Aadhaar caches
+                        updates._aadhaarNameCache = '';
+                        updates._aadhaarFatherNameCache = '';
+                        updates._aadhaarAddressCache = '';
+                        updates._aadhaarPlaceCache = '';
+                        
+                        const legalName = data.name || data.legal_name || '';
+                        const cleanName = legalName
+                            .split(/\s+/)
+                            .filter(part => part.replace(/\./g, '').length > 0)
+                            .join(' ')
+                            .toUpperCase();
+                            
+                        if (cleanName) {
+                            updates._aadhaarNameCache = cleanName;
+                        }
+                        if (data.father_name) {
+                            updates._aadhaarFatherNameCache = data.father_name.toUpperCase();
+                        }
+                        if (data.gender) {
+                            updates.proprietorTitle = data.gender === 'MALE' ? 'Mr.' : 'Mrs.';
+                        }
+                        const extractedAddress = data.business_address || data.address;
+                        // Always overwrite address cache and form field on every Aadhaar upload
+                        updates._aadhaarAddressCache = extractedAddress ? toTitleCase(extractedAddress) : '';
+                        updates.companyAddress = updates._aadhaarAddressCache;
+
+                        const extractedDistrict = data.district || data.place || '';
+                        // Always overwrite place/district on every Aadhaar upload
+                        updates._aadhaarPlaceCache = extractedDistrict;
+                        updates.place = extractedDistrict;
+                    }
+                }
+                
+                const hasAadhaar = updates._aadhaarUploaded || prev._aadhaarUploaded;
+                const hasPan = updates._panUploaded || prev._panUploaded;
+                
+                // Phase 2: Derive UI Fields from Caches
+                
+                const isPanInBatch = uploadedDocTypes.includes('pan');
+                const isAadhaarInBatch = uploadedDocTypes.includes('aadhaar');
+
+                const aadhaarName = isAadhaarInBatch ? updates._aadhaarNameCache : prev._aadhaarNameCache;
+                const aadhaarFather = isAadhaarInBatch ? updates._aadhaarFatherNameCache : prev._aadhaarFatherNameCache;
+                const panName = isPanInBatch ? updates._panNameCache : prev._panNameCache;
+                const panFather = isPanInBatch ? updates._panFatherNameCache : prev._panFatherNameCache;
+                const panNumber = isPanInBatch ? updates._panNumberCache : prev._panNumberCache;
+                
+                const isPanFirst = updates._isPanFirstSequence !== undefined ? updates._isPanFirstSequence : prev._isPanFirstSequence;
+                
+                // Reset derived fields so they can be re-evaluated
+                updates.proprietorName = '';
+                updates.fatherOfProprietor = '';
+                
+                // 1. Proprietor Name Ownership
+                if (isPanFirst && panName) {
+                    updates.proprietorName = panName;
+                } else if (aadhaarName) {
+                    updates.proprietorName = aadhaarName;
+                } else if (panName) {
+                    updates.proprietorName = panName;
+                }
+                
+                // 2. Father's Name Ownership
+                if (isPanFirst && panFather) {
+                    updates.fatherOfProprietor = panFather;
+                } else if (aadhaarFather) {
+                    updates.fatherOfProprietor = aadhaarFather;
+                } else if (panFather) {
+                    updates.fatherOfProprietor = panFather;
+                }
+                
+                // 3. PAN Verification Logic
+                if (hasAadhaar && hasPan && aadhaarName && panName) {
+                    // Both documents uploaded and both names successfully extracted, run verification
+                    const primarySimilarity = calculateFuzzyMatch(aadhaarName, panName);
+                    
+                    let isVerified = false;
+                    
+                    if (primarySimilarity >= NAME_MATCH_THRESHOLD) {
+                        isVerified = true;
+                    } else {
+                        // Primary match failed, attempt fallback check if PAN Father's Name exists
+                        if (panFather) {
+                            const combinedPanName = `${panName} ${panFather}`;
+                            const fallbackSimilarity = calculateFuzzyMatch(aadhaarName, combinedPanName);
+                            if (fallbackSimilarity >= NAME_MATCH_THRESHOLD) {
+                                isVerified = true;
+                            }
+                        }
+                    }
+                    
+                    if (isVerified) {
+                        updates.proprietorPan = panNumber || '';
+                        updates.panVerificationStatus = 'verified';
+                        updates.showMismatchOverlay = false;
+                        
+                        // If it's a PAN-first sequence, populate Address and Place now that verification succeeded
+                        if (isPanFirst) {
+                            const cachedAddress = updates._aadhaarAddressCache || prev._aadhaarAddressCache;
+                            const cachedPlace = updates._aadhaarPlaceCache || prev._aadhaarPlaceCache;
+                            
+                            if (cachedAddress) updates.companyAddress = cachedAddress;
+                            if (cachedPlace) updates.place = cachedPlace;
+                        }
+                    } else {
+                        // Leave proprietorPan unchanged while mismatch overlay is shown
+                        updates.panVerificationStatus = 'mismatched';
+                        updates.showMismatchOverlay = true;
+                    }
+                } else {
+                    if (hasPan && !hasAadhaar) {
+                        updates.proprietorPan = panNumber || '';
+                    } else if (hasAadhaar && !hasPan) {
+                        updates.proprietorPan = '';
+                    }
+                    updates.panVerificationStatus = null;
+                    updates.showMismatchOverlay = false;
+                }
+
+                return updates;
+            });
         }
-        setIsProcessing(false);
-        e.target.value = '';
+        } catch (error) {
+            console.error("Critical error in handleProprietorUpload:", error);
+            alert("A critical error occurred while processing the PAN card.");
+        } finally {
+            setIsProcessing(false);
+            e.target.value = null;
+        }
     };
 
     const handleGuarantorUpload = async (e, index) => {
@@ -514,13 +678,77 @@ const Documat = ({ user, onLogout, onTabChange }) => {
         }
     };
 
-    const handleBankUpload = async (e) => {
+    const handleBankUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        setOriginalBankFile(file);
+        setBankDocType('Cheque');
+        setRotate(0);
+        const reader = new FileReader();
+        reader.addEventListener('load', () =>
+            setCropImageSrc(reader.result?.toString() || '')
+        );
+        reader.readAsDataURL(file);
+        setIsCropModalOpen(true);
+        e.target.value = '';
+    };
+
+    const rotateImageSource = (angle) => {
+        if (!cropImageSrc) return;
+        
+        const image = new Image();
+        image.src = cropImageSrc;
+        image.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            if (angle === 90 || angle === -90 || angle === 270 || angle === -270) {
+                canvas.width = image.height;
+                canvas.height = image.width;
+            } else {
+                canvas.width = image.width;
+                canvas.height = image.height;
+            }
+            
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((angle * Math.PI) / 180);
+            ctx.drawImage(image, -image.width / 2, -image.height / 2);
+            
+            setCropImageSrc(canvas.toDataURL('image/jpeg'));
+            setCrop(undefined); // Reset crop area
+            setRotate(0); // Ensure rotate state remains 0 for handleProcessCrop
+        };
+    };
+
+    const handleProcessCrop = async () => {
+        if (!completedCrop || !imgRef.current || !originalBankFile) {
+            if (!completedCrop?.width || !completedCrop?.height) {
+                await uploadBankFile(originalBankFile);
+                setIsCropModalOpen(false);
+                return;
+            }
+        }
+
+        const canvas = document.createElement('canvas');
+        await canvasPreview(imgRef.current, canvas, completedCrop, 1, rotate);
+
+        canvas.toBlob(async (blob) => {
+            if (!blob) {
+                console.error('Canvas is empty');
+                return;
+            }
+            const croppedFile = new File([blob], originalBankFile.name, { type: originalBankFile.type });
+            setIsCropModalOpen(false);
+            await uploadBankFile(croppedFile);
+        }, originalBankFile.type);
+    };
+
+    const uploadBankFile = async (file) => {
         setIsBankProcessing(true);
         const uploadFormData = new FormData();
         uploadFormData.append('file', file);
+        uploadFormData.append('type', bankDocType);
 
         try {
             const response = await fetch(`${config.API_BASE_URL}/extract-bank`, {
@@ -532,13 +760,21 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             if (result.success && result.data) {
                 setFormData(prev => {
                     let updates = { ...prev };
-                    if (result.data.account_number) {
+                    
+                    // Clear previous bank details before applying new ones
+                    updates.accountNumber = '';
+                    updates.ifsc = '';
+                    updates.bankName = '';
+                    updates.branch = '';
+                    updates.pincode = '';
+
+                    if (result.data.account_number && result.data.account_number !== "ACCOUNT: NOT FOUND" && result.data.account_number !== "Not Found") {
                         updates.accountNumber = result.data.account_number;
                     }
-                    if (result.data.ifsc_code) {
+                    if (result.data.ifsc_code && result.data.ifsc_code !== "IFSC: NOT FOUND" && result.data.ifsc_code !== "Not Found") {
                         updates.ifsc = result.data.ifsc_code;
                     }
-                    if (result.data.bank_name) {
+                    if (result.data.bank_name && result.data.bank_name !== "Not Found") {
                         updates.bankName = result.data.bank_name;
                     }
                     if (result.data.branch_name) {
@@ -555,7 +791,6 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             alert('Error connecting to server to extract bank details.');
         } finally {
             setIsBankProcessing(false);
-            e.target.value = '';
         }
     };
 
@@ -633,7 +868,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     ) : (
                         /* Step 2: Document Form */
                         <div className="flex-1 flex flex-col items-center animate-in fade-in slide-in-from-right-12 duration-700">
-                            <div className="w-full max-w-6xl bg-white dark:bg-[#0f172b] rounded-[2rem] border border-slate-200 dark:border-slate-800 p-12 shadow-2xl relative overflow-hidden transition-colors duration-300">
+                            <div className="w-full max-w-[95%] bg-white dark:bg-[#0f172b] rounded-[2rem] border border-slate-200 dark:border-slate-800 p-12 shadow-2xl relative overflow-hidden transition-colors duration-300">
                                 {/* Form Header */}
                                 <div className="flex items-center justify-between mb-12">
                                     <div className="flex items-center gap-6">
@@ -657,6 +892,34 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                                                         <span className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-500 animate-pulse">Extracting Proprietor Details...</span>
                                                     </div>
+                                                </div>
+                                            )}
+                                            {formData.showMismatchOverlay && (
+                                                <div className="absolute inset-0 w-full h-full left-0 top-0 z-30 !mt-0 flex flex-col items-center justify-center bg-white/75 dark:bg-[#0f172b]/75 backdrop-blur-md transition-all duration-300 rounded-2xl p-6 text-center">
+                                                    <div className="w-12 h-12 mb-3 bg-red-100 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/20">
+                                                        <span className="material-symbols-outlined text-2xl">warning</span>
+                                                    </div>
+                                                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3">Name Verification Failed</h3>
+                                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 w-full max-w-sm mb-4 text-left space-y-2 shadow-sm">
+                                                        <div className="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-800 pb-2">
+                                                            <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">Aadhaar</span>
+                                                            <span className="font-black text-slate-800 dark:text-slate-200">{formData._aadhaarNameCache}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center text-xs pt-1">
+                                                            <span className="font-bold text-slate-500 uppercase tracking-widest text-[9px]">PAN</span>
+                                                            <span className="font-black text-slate-800 dark:text-slate-200">{formData._panNameCache}</span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-xs font-medium text-slate-500 mb-6 max-w-sm">
+                                                        These names do not match. Borrower Firm PAN will not be auto-filled.
+                                                    </p>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setFormData({...formData, showMismatchOverlay: false, proprietorPan: ''})}
+                                                        className="px-6 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 transition-all cursor-pointer shadow-lg shadow-slate-900/20 active:scale-95"
+                                                    >
+                                                        Continue Anyway
+                                                    </button>
                                                 </div>
                                             )}
                                             <div className="flex items-center justify-between">
@@ -683,7 +946,15 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                     <input type="text" placeholder="Enter borrower firm name" value={formData.companyName} onChange={(e) => setFormData({ ...formData, companyName: e.target.value })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
                                                 </div>
                                                 <div className="space-y-2">
-                                                    <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Proprietor Name <span className="text-red-500">*</span></label>
+                                                    <div className="flex justify-between items-center ml-1">
+                                                        <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Proprietor Name <span className="text-red-500">*</span></label>
+                                                        {formData.panVerificationStatus === 'verified' && (
+                                                            <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded flex items-center gap-1">
+                                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                                VERIFIED
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="flex gap-2">
                                                         <select
                                                             value={formData.proprietorTitle || 'Mr.'}
@@ -698,9 +969,12 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                             placeholder="Enter proprietor name"
                                                             value={formData.proprietorName}
                                                             onChange={(e) => setFormData({ ...formData, proprietorName: e.target.value })}
-                                                            className="flex-1 px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                                            className={`flex-1 px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border ${formData.panVerificationStatus === 'mismatched' ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-slate-200 dark:border-slate-800 focus:border-blue-500 focus:ring-blue-500/20'} text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all`}
                                                         />
                                                     </div>
+                                                    {formData.panVerificationStatus === 'mismatched' && (
+                                                        <p className="text-[11px] font-medium text-red-500 ml-1 mt-1">Aadhaar and PAN card names are mismatched</p>
+                                                    )}
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Father of Proprietor <span className="text-red-500">*</span></label>
@@ -708,7 +982,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Borrower Firm PAN <span className="text-red-500">*</span></label>
-                                                    <input type="text" maxLength={10} placeholder="XXXXX0000X" value={formData.proprietorPan} onChange={(e) => setFormData({ ...formData, proprietorPan: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase" />
+                                                    <input type="text" maxLength={10} placeholder="XXXXX0000X" value={formData.proprietorPan} onChange={(e) => setFormData({ ...formData, proprietorPan: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 focus:border-blue-500 focus:ring-blue-500/20 text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all uppercase" />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Borrower Firm Address <span className="text-red-500">*</span></label>
@@ -1172,6 +1446,100 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     </footer>
                 </div>
             </main>
+
+            {/* Custom Crop Modal */}
+            {isCropModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all duration-300 animate-fade-in">
+                    <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f172b] shadow-2xl p-8 transform scale-100 transition-all duration-300 max-h-[90vh] flex flex-col">
+                        <div className="flex items-center justify-between mb-6 shrink-0">
+                            <div className="flex items-center gap-4 text-blue-500">
+                                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-2xl">crop</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Crop Document Image</h3>
+                                    <p className="text-[11px] font-medium tracking-wide text-slate-400 mt-0.5">Drag to crop the relevant area</p>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => rotateImageSource(-90)}
+                                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer flex items-center justify-center shadow-sm"
+                                    title="Rotate Left 90°"
+                                >
+                                    <span className="material-symbols-outlined text-[20px]">rotate_left</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => rotateImageSource(90)}
+                                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer flex items-center justify-center shadow-sm"
+                                    title="Rotate Right 90°"
+                                >
+                                    <span className="material-symbols-outlined text-[20px]">rotate_right</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6 mb-4 shrink-0 px-2">
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                                <div className="relative flex items-center justify-center">
+                                    <input type="radio" name="bankDocType" value="Cheque" checked={bankDocType === 'Cheque'} onChange={() => setBankDocType('Cheque')} className="peer sr-only" />
+                                    <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all"></div>
+                                    <div className="absolute w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+                                </div>
+                                <span className="text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors uppercase tracking-wider">Cheque</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                                <div className="relative flex items-center justify-center">
+                                    <input type="radio" name="bankDocType" value="Normal" checked={bankDocType === 'Normal'} onChange={() => setBankDocType('Normal')} className="peer sr-only" />
+                                    <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 peer-checked:border-blue-500 peer-checked:bg-blue-500 transition-all"></div>
+                                    <div className="absolute w-2 h-2 rounded-full bg-white opacity-0 peer-checked:opacity-100 transition-opacity"></div>
+                                </div>
+                                <span className="text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors uppercase tracking-wider">Normal</span>
+                            </label>
+                        </div>
+
+                        <div className="flex-1 overflow-auto bg-slate-100 dark:bg-[#101822] rounded-xl flex items-center justify-center min-h-[300px]">
+                            {cropImageSrc ? (
+                                <ReactCrop
+                                    crop={crop}
+                                    onChange={c => setCrop(c)}
+                                    onComplete={c => setCompletedCrop(c)}
+                                    className="max-h-[60vh] max-w-full"
+                                >
+                                    <img 
+                                        ref={imgRef} 
+                                        src={cropImageSrc} 
+                                        alt="Crop me" 
+                                        style={{ maxHeight: '60vh', maxWidth: '100%', objectFit: 'contain' }}
+                                    />
+                                </ReactCrop>
+                            ) : (
+                                <div className="text-slate-400">Loading image...</div>
+                            )}
+                        </div>
+
+                        <div className="mt-8 flex justify-end gap-4 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setIsCropModalOpen(false)}
+                                className="px-6 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold uppercase tracking-wider text-[10px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleProcessCrop}
+                                className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold uppercase tracking-wider text-[10px] hover:bg-blue-700 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer shadow-lg shadow-blue-500/30"
+                            >
+                                Crop & Process
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Custom Error Popup Modal */}
             {errorPopup && (
