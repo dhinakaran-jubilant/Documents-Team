@@ -1171,6 +1171,35 @@ def fill_ltrl_docx(form_data, joinees_list, template_path, output_path):
     
     doc = docx.Document(template_path)
     
+    is_partnership_template = False
+    for p in doc.paragraphs:
+        if "{{partnership_details}}" in p.text or "{{resolution_partners_list}}" in p.text:
+            is_partnership_template = True
+            break
+            
+    # Build partnership details
+    partner_lines = []
+    res_list = []
+    if is_partnership_template:
+        for idx, j in enumerate(joinees_list):
+            j_name = j.get('name', '')
+            clean_j_name = j_name
+            for prefix in ['Mr.', 'Mrs.', 'Ms.', 'Sri.', 'Smt.', 'Sri', 'Smt', 'Mr', 'Mrs']:
+                if clean_j_name.upper().startswith(prefix.upper()):
+                    clean_j_name = clean_j_name[len(prefix):].strip()
+                    break
+            j_title = j.get('title', 'Mr.')
+            if j_title and not j_title.endswith('.'): j_title += '.'
+            j_rel = 'D/o' if j_title.strip().lower() in ['mrs.', 'ms.', 'smt.'] else 'S/o'
+            j_pan = j.get('pan', '').upper()
+            j_father = j.get('father', '')
+            
+            partner_lines.append(f"({idx+1}) {j_title} {clean_j_name}, (PAN No.- {j_pan}),\n      {j_rel}. {j_father}")
+            res_list.append(f"({idx+1}) {j_title} {clean_j_name}, {j_rel}. {j_father}")
+            
+    partnership_details = "\n".join(partner_lines)
+    resolution_partners_list = ", ".join(res_list)
+    
     # Extract values
     loan_amount_val = form_data.get('loanAmount', '')
     if '.' in str(loan_amount_val):
@@ -1218,6 +1247,50 @@ def fill_ltrl_docx(form_data, joinees_list, template_path, output_path):
     lender_name_clean = re.sub(r'^(M/S\.?)\s+', '', lender_name_val, flags=re.IGNORECASE).strip()
     lender_address_clean = re.sub(r'^no\.?\s*', '', lender_address.replace('\n', ' '), flags=re.IGNORECASE).strip()
     lender_address_clean = re.sub(r'\s+', ' ', lender_address_clean)
+
+    if is_partnership_template:
+        mapping = {
+            '{{loan_date}}': loan_date_formatted,
+            '{{client_company_name}}': company_name,
+            '{{partnership_details}}': partnership_details,
+            '{{resolution_partners_list}}': resolution_partners_list,
+        }
+        for paragraph in doc.paragraphs:
+            for ph, val in mapping.items():
+                if ph in paragraph.text:
+                    if ph == '{{partnership_details}}':
+                        # Preserve line breaks by splitting and adding runs
+                        for run in list(paragraph.runs):
+                            if ph in run.text:
+                                parts = run.text.split(ph)
+                                run.text = parts[0]
+                                p_lines = str(val).split('\n')
+                                for i, line in enumerate(p_lines):
+                                    if i > 0:
+                                        r_break = paragraph.add_run()
+                                        r_break.add_break()
+                                        r_break.bold = run.bold
+                                        r_break.italic = run.italic
+                                        r_break.font.name = run.font.name
+                                        r_break.font.size = run.font.size
+                                    r_new = paragraph.add_run(line)
+                                    r_new.bold = run.bold
+                                    r_new.italic = run.italic
+                                    r_new.font.name = run.font.name
+                                    r_new.font.size = run.font.size
+                                if len(parts) > 1 and parts[1]:
+                                    r_after = paragraph.add_run(parts[1])
+                                    r_after.bold = run.bold
+                                    r_after.italic = run.italic
+                                    r_after.font.name = run.font.name
+                                    r_after.font.size = run.font.size
+                    else:
+                        for run in paragraph.runs:
+                            if ph in run.text:
+                                run.text = run.text.replace(ph, str(val))
+                                
+        doc.save(output_path)
+        return
 
     # 1. Update Date
     doc.paragraphs[0].text = f"From\t\t\t\t\t\t\t\t\t\tDate: {loan_date_formatted}"
@@ -1536,13 +1609,40 @@ def generate_promissory_note_pdf(form_data, joinees_list, output_path):
 
 def fill_letter_of_undertaking_docx(form_data, joinees_list, template_path, output_path):
     import docx
-    from datetime import datetime
     import re
-    from docx.shared import Pt
-    from docx.oxml.ns import qn
+    from datetime import datetime
+    import os
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     
     # 1. Load document
     doc = docx.Document(template_path)
+    
+    is_partnership_template = False
+    for p in doc.paragraphs:
+        if "{{partnership_details}}" in p.text:
+            is_partnership_template = True
+            break
+            
+    # Build partnership details
+    partner_lines = []
+    if is_partnership_template:
+        for idx, j in enumerate(joinees_list):
+            j_name = j.get('name', '')
+            clean_j_name = j_name
+            for prefix in ['Mr.', 'Mrs.', 'Ms.', 'Sri.', 'Smt.', 'Sri', 'Smt', 'Mr', 'Mrs']:
+                if clean_j_name.upper().startswith(prefix.upper()):
+                    clean_j_name = clean_j_name[len(prefix):].strip()
+                    break
+            j_title = j.get('title', 'Mr.')
+            if j_title and not j_title.endswith('.'): j_title += '.'
+            j_rel = 'D/o' if j_title.strip().lower() in ['mrs.', 'ms.', 'smt.'] else 'S/o'
+            j_pan = j.get('pan', '').upper()
+            j_father = j.get('father', '')
+            
+            partner_lines.append(f"({idx+1}) {j_title} {clean_j_name}, (PAN No.- {j_pan}),\n      {j_rel}. {j_father}")
+            
+    partnership_details = "\n".join(partner_lines)
     
     # Merge runs globally to simplify search-and-replace
     for p in doc.paragraphs:
@@ -1612,6 +1712,8 @@ def fill_letter_of_undertaking_docx(form_data, joinees_list, template_path, outp
         '{{loan_date}}': loan_date_formatted,
         '{{client_company_title}}': 'M/s',
         '{{client_company_name}}': company_name,
+        '{{client_company_pan}}': prop_pan,
+        '{{client_company_address}}': company_address_formatted,
         '{{name_title}}': prop_title,
         '{{name}}': clean_prop_name,
         '{{proprietor_pan}}': prop_pan,
@@ -1621,11 +1723,13 @@ def fill_letter_of_undertaking_docx(form_data, joinees_list, template_path, outp
         '{{company_title}}': 'M/s',
         '{{company_name}}': lender_name_clean,
         '{{company_pan}}': lender_pan,
+        '{{company_address}}': lender_address_formatted,
         '{{loan_amount}}': loan_amount_formatted,
         '{{amount_text}}': amount_in_words,
         '{{no_of_periods}}': no_of_periods,
         '{{period_plural}}': period_plural,
         '{{period_term}}': period_term,
+        '{{partnership_details}}': partnership_details,
     }
     
     if joinees_list:
@@ -1662,9 +1766,48 @@ def fill_letter_of_undertaking_docx(form_data, joinees_list, template_path, outp
         replace_address_in_paragraph(paragraph, '{{company_address}}', lender_address_formatted)
         
         for ph, val in mapping.items():
-            for run in paragraph.runs:
-                if ph in run.text:
-                    run.text = run.text.replace(ph, str(val))
+            if ph == '{{partnership_details}}':
+                for run in list(paragraph.runs):
+                    if ph in run.text:
+                        parts = run.text.split(ph)
+                        run.text = parts[0]
+                        p_lines = str(val).split('\n')
+                        for i, line in enumerate(p_lines):
+                            if i > 0:
+                                r_break = paragraph.add_run()
+                                r_break.add_break()
+                                r_break.bold = run.bold
+                                r_break.italic = run.italic
+                                r_break.font.name = run.font.name
+                                r_break.font.size = run.font.size
+                            r_new = paragraph.add_run(line)
+                            r_new.bold = run.bold
+                            r_new.italic = run.italic
+                            r_new.font.name = run.font.name
+                            r_new.font.size = run.font.size
+                        if len(parts) > 1 and parts[1]:
+                            r_after = paragraph.add_run(parts[1])
+                            r_after.bold = run.bold
+                            r_after.italic = run.italic
+                            r_after.font.name = run.font.name
+                            r_after.font.size = run.font.size
+            else:
+                for run in paragraph.runs:
+                    if ph in run.text:
+                        run.text = run.text.replace(ph, str(val))
+                        
+    if is_partnership_template:
+        for p in doc.paragraphs:
+            for run in p.runs:
+                run.font.name = 'Calibri'
+                rPr = run._r.get_or_add_rPr()
+                rFonts = rPr.get_or_add_rFonts()
+                rFonts.set(qn('w:ascii'), 'Calibri')
+                rFonts.set(qn('w:hAnsi'), 'Calibri')
+                run.font.size = Pt(12)
+                
+        doc.save(output_path)
+        return
                     
     # Format company name bold, proprietor name bold dynamically
     for paragraph in doc.paragraphs:
