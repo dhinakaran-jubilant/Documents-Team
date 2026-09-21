@@ -3,6 +3,8 @@ import sys
 
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+os.environ['FLAGS_use_mkldnn'] = '0'
+os.environ['FLAGS_enable_pir_api'] = '0'
 
 for k in list(sys.modules.keys()):
     if k.startswith('google.protobuf'):
@@ -32,10 +34,29 @@ def load_ocr_reader():
     global _OCR_READER
     if _OCR_READER is None:
         from paddleocr import PaddleOCR
-        # Increase det_limit_side_len to prevent downscaling large cheques.
-        # Increase det_db_unclip_ratio to prevent clipping the first/last characters in boxed text.
-        _OCR_READER = PaddleOCR(use_angle_cls=True, lang='en', det_limit_side_len=2048, det_db_unclip_ratio=2.0)
+        # det_limit_type='max' with det_limit_side_len=1500 caps the longest side
+        # enable_mkldnn=False resolves the PIR ConvertPirAttribute2RuntimeAttribute crash on CPU
+        _OCR_READER = PaddleOCR(
+            use_angle_cls=True,
+            lang='en',
+            det_limit_type='max',
+            det_limit_side_len=1500,
+            det_db_unclip_ratio=2.0,
+            enable_mkldnn=False
+        )
     return _OCR_READER
+
+def _safe_scale_for_ocr(image, max_dim=2000):
+    """Ensure images passed to OCR do not blow up memory or trigger max_side_limit limits."""
+    if image is None or image.size == 0:
+        return image
+    h, w = image.shape[:2]
+    max_side = max(h, w)
+    if max_side > max_dim:
+        scale = max_dim / float(max_side)
+        new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+        return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return image
 
 def order_points(pts):
     # Sort the points based on their x-coordinates
@@ -591,18 +612,19 @@ def extract_cheque_from_file(file_input):
     # Step 4 — Extract bank details from top 40%
     h, w = processed_img.shape[:2]
     top_40_img = processed_img[0:int(0.40 * h), 0:w]
+    top_40_scaled = _safe_scale_for_ocr(top_40_img, max_dim=2000)
     
-    full_ocr_results = reader.ocr(top_40_img)
+    full_ocr_results = reader.ocr(top_40_scaled)
     full_ocr_results = full_ocr_results[0] if full_ocr_results and full_ocr_results[0] else []
 
-    height = top_40_img.shape[0]
+    height = top_40_scaled.shape[0]
     bank_name = extract_bank_name_with_fallback(full_ocr_results, height)
 
     # Step 5 — Bank-specific deep crop
     rois = crop_bank_specific(processed_img, bank_name)
 
-    first_roi  = rois.get("First Part",  np.zeros((10, 10, 3), dtype=np.uint8))
-    second_roi = rois.get("Second Part", np.zeros((10, 10, 3), dtype=np.uint8))
+    first_roi  = _safe_scale_for_ocr(rois.get("First Part",  np.zeros((10, 10, 3), dtype=np.uint8)), max_dim=2000)
+    second_roi = _safe_scale_for_ocr(rois.get("Second Part", np.zeros((10, 10, 3), dtype=np.uint8)), max_dim=2000)
 
     # Step 6 — OCR on ROIs
     first_ocr  = reader.ocr(first_roi)

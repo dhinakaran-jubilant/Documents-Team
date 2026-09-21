@@ -15,6 +15,8 @@ import sys
 
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+os.environ['FLAGS_use_mkldnn'] = '0'
+os.environ['FLAGS_enable_pir_api'] = '0'
 
 for k in list(sys.modules.keys()):
     if k.startswith('google.protobuf'):
@@ -30,6 +32,8 @@ import cv2
 import pytesseract
 from utils.pdf_generator import process_excel_to_pdfs, create_zip_archive
 from utils.promissory_generator import fill_promissory_note_docx, fill_letterpad_docx, fill_ltrl_docx, fill_letter_of_undertaking_docx
+import warnings
+warnings.filterwarnings("ignore", message=r".*doesn't match a supported version.*")
 import requests
 import sys
 import pathlib

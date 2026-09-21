@@ -43,6 +43,9 @@ def run_app():
     env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = os.path.dirname(scripts_dir)
     env["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+    env["PYTHONWARNINGS"] = "ignore::requests.exceptions.RequestsDependencyWarning"
+    env["FLAGS_use_mkldnn"] = "0"
+    env["FLAGS_enable_pir_api"] = "0"
     # Remove PYTHONHOME if it exists to avoid conflicts
     env.pop("PYTHONHOME", None)
 
