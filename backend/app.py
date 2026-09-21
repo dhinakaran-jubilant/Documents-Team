@@ -14,6 +14,7 @@ import os
 import sys
 
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
 
 for k in list(sys.modules.keys()):
     if k.startswith('google.protobuf'):
@@ -64,20 +65,27 @@ with app.app_context():
             if os.path.exists(excel_path):
                 wb = openpyxl.load_workbook(excel_path)
                 ws = wb.active
-                seeded = 0
+                records = []
                 for row in ws.iter_rows(min_row=2, values_only=True):
                     name, pan_number, address = row[0], row[1], row[2]
                     if name:
-                        conn = get_conn()
+                        records.append((
+                            str(name).strip(),
+                            str(pan_number).strip() if pan_number else None,
+                            str(address).strip() if address else None
+                        ))
+                if records:
+                    conn = get_conn()
+                    try:
                         with conn.cursor() as cur:
-                            cur.execute(
+                            cur.executemany(
                                 "INSERT INTO company_addresses (name, pan_number, address) VALUES (%s, %s, %s)",
-                                (str(name).strip(), str(pan_number).strip() if pan_number else None, str(address).strip() if address else None)
+                                records
                             )
-                            conn.commit()
+                        conn.commit()
+                    finally:
                         release_conn(conn)
-                        seeded += 1
-                print(f"Seeded {seeded} records into company_addresses table")
+                print(f"Seeded {len(records)} records into company_addresses table")
             else:
                 print("company_address_data.xlsx not found, skipping seed")
         else:
@@ -800,7 +808,7 @@ def handle_extract_pdf():
                 # If no GST data was found, it might be an Aadhaar/PAN image saved as a PDF.
                 # Convert the first page to an image and run image extraction.
                 try:
-                    import fitz
+                    import pymupdf as fitz
                     from PIL import Image
                     
                     pdf_doc = fitz.open(temp_pdf_path)

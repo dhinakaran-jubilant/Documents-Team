@@ -42,6 +42,7 @@ def run_app():
     scripts_dir = os.path.dirname(python_exe)
     env["PATH"] = scripts_dir + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = os.path.dirname(scripts_dir)
+    env["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
     # Remove PYTHONHOME if it exists to avoid conflicts
     env.pop("PYTHONHOME", None)
 

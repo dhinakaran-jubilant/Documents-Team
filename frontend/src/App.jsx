@@ -6,12 +6,13 @@
  * Description: Main Application component that handles user session management and auto-logout logic.
  */
 
-import React, { useState, useEffect } from 'react';
-import Upload from './components/Upload';
-import Documat from './components/Documat';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import Login from './components/Login';
-import Users from './components/Users';
-import History from './components/History';
+
+const Upload = lazy(() => import('./components/Upload'));
+const Documat = lazy(() => import('./components/Documat'));
+const Users = lazy(() => import('./components/Users'));
+const History = lazy(() => import('./components/History'));
 
 /**
  * Main App component.
@@ -63,29 +64,39 @@ function App() {
     if (!user) return;
 
     let logoutTimer;
+    let lastReset = Date.now();
     const timeoutDuration = 60 * 60 * 1000; // 1 hour
 
-    const resetTimer = () => {
+    const performReset = () => {
       if (logoutTimer) clearTimeout(logoutTimer);
       logoutTimer = setTimeout(() => {
         handleLogout();
       }, timeoutDuration);
     };
 
+    const handleActivity = () => {
+      const now = Date.now();
+      // Throttle timer reset to at most once every 15 seconds to eliminate CPU overhead on mousemove/scroll
+      if (now - lastReset > 15000) {
+        lastReset = now;
+        performReset();
+      }
+    };
+
     // Track user activity
     const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
     
     activityEvents.forEach(event => {
-      window.addEventListener(event, resetTimer);
+      window.addEventListener(event, handleActivity, { passive: true });
     });
 
     // Initialize timer
-    resetTimer();
+    performReset();
 
     return () => {
       if (logoutTimer) clearTimeout(logoutTimer);
       activityEvents.forEach(event => {
-        window.removeEventListener(event, resetTimer);
+        window.removeEventListener(event, handleActivity);
       });
     };
   }, [user]);
@@ -94,19 +105,31 @@ function App() {
     return <Login onLogin={setUser} />;
   }
 
-  if (activeTab === 'documat') {
-    return <Documat user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
-  }
+  const renderContent = () => {
+    if (activeTab === 'documat') {
+      return <Documat user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+    }
 
-  if (activeTab === 'users') {
-    return <Users user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
-  }
+    if (activeTab === 'users') {
+      return <Users user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+    }
 
-  if (activeTab === 'history') {
-    return <History user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
-  }
+    if (activeTab === 'history') {
+      return <History user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+    }
 
-  return <Upload user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+    return <Upload user={user} onLogout={handleLogout} onTabChange={setActiveTab} />;
+  };
+
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+      </div>
+    }>
+      {renderContent()}
+    </Suspense>
+  );
 }
 
 export default App;

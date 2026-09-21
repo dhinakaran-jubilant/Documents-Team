@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytesseract
 import re
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 def preprocess_format_c(image):
     """

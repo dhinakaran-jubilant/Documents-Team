@@ -2,6 +2,7 @@ import os
 import sys
 
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+os.environ['PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK'] = 'True'
 
 for k in list(sys.modules.keys()):
     if k.startswith('google.protobuf'):
@@ -25,11 +26,16 @@ import re
 import json
 import difflib
 
+_OCR_READER = None
+
 def load_ocr_reader():
-    from paddleocr import PaddleOCR
-    # Increase det_limit_side_len to prevent downscaling large cheques.
-    # Increase det_db_unclip_ratio to prevent clipping the first/last characters in boxed text.
-    return PaddleOCR(use_angle_cls=True, lang='en', det_limit_side_len=2048, det_db_unclip_ratio=2.0)
+    global _OCR_READER
+    if _OCR_READER is None:
+        from paddleocr import PaddleOCR
+        # Increase det_limit_side_len to prevent downscaling large cheques.
+        # Increase det_db_unclip_ratio to prevent clipping the first/last characters in boxed text.
+        _OCR_READER = PaddleOCR(use_angle_cls=True, lang='en', det_limit_side_len=2048, det_db_unclip_ratio=2.0)
+    return _OCR_READER
 
 def order_points(pts):
     # Sort the points based on their x-coordinates
@@ -554,7 +560,7 @@ def extract_cheque_from_file(file_input):
         file_path = str(file_input)
         if file_path.lower().endswith('.pdf'):
             try:
-                import fitz  # type: ignore  # PyMuPDF preferred for speed
+                import pymupdf as fitz  # type: ignore  # PyMuPDF preferred for speed
                 doc = fitz.open(file_path)
                 page = doc.load_page(0)
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))

@@ -16,7 +16,7 @@ from pytesseract import Output, TesseractNotFoundError
 from PIL import Image
 
 try:
-    import fitz  # PyMuPDF, only needed for PDF input
+    import pymupdf as fitz  # PyMuPDF, only needed for PDF input
 except ImportError:  # pragma: no cover
     fitz = None
 
@@ -299,26 +299,10 @@ def _get_words(image: "cv2.Mat") -> list[TextWord]:
     return words
 
 
-def _ocr_text_by_confidence(image: "cv2.Mat", config: str, min_conf: int) -> str:
-    """Run Tesseract and rebuild line text keeping only high-confidence words.
-
-    image_to_string() collapses everything to a plain string, so a real
-    printed word and an equally plausible-looking watermark misread both
-    just come out as text - there is no way to tell them apart afterwards.
-    image_to_data() additionally returns Tesseract's own per-word
-    confidence, which is what actually distinguishes them: stray reads off
-    the background watermark reliably score much lower than genuinely
-    printed characters, regardless of how "real" the resulting word looks.
-    Words are grouped back into lines using Tesseract's own
-    block/paragraph/line numbering so line structure is preserved.
-    """
-    try:
-        data = pytesseract.image_to_data(image, config=config, output_type=Output.DICT)
-    except TesseractNotFoundError:
-        raise
-    except Exception:
+def _rebuild_text_from_ocr_data(data: dict, min_conf: int) -> str:
+    """Rebuild line text from Tesseract dict keeping words with conf >= min_conf."""
+    if not data:
         return ""
-
     n = len(data.get("text", []))
     lines: dict[tuple, list[str]] = {}
     order: list[tuple] = []
@@ -356,16 +340,37 @@ def _ocr_text_by_confidence(image: "cv2.Mat", config: str, min_conf: int) -> str
     return "\n".join(" ".join(w[0] for w in lines[key]) for key in order)
 
 
+def _ocr_text_by_confidence(image: "cv2.Mat", config: str, min_conf: int, data: dict | None = None) -> str:
+    """Run Tesseract and rebuild line text keeping only high-confidence words."""
+    if data is None:
+        try:
+            data = pytesseract.image_to_data(image, config=config, output_type=Output.DICT)
+        except TesseractNotFoundError:
+            raise
+        except Exception:
+            return ""
+
+    return _rebuild_text_from_ocr_data(data, min_conf)
+
+
 def _ocr_text_multi_confidence(image: "cv2.Mat", config: str) -> str:
     """Try progressively looser confidence thresholds, then fall back to
     unfiltered image_to_string so a blurry/low-quality photo never ends up
     with no text at all just because every word scored under the highest
     threshold.
     """
-    for min_conf in NAME_CONFIDENCE_LEVELS:
-        text = _ocr_text_by_confidence(image, config, min_conf)
-        if text.strip():
-            return text
+    try:
+        data = pytesseract.image_to_data(image, config=config, output_type=Output.DICT)
+    except TesseractNotFoundError:
+        raise
+    except Exception:
+        data = None
+
+    if data:
+        for min_conf in NAME_CONFIDENCE_LEVELS:
+            text = _rebuild_text_from_ocr_data(data, min_conf)
+            if text.strip():
+                return text
     return pytesseract.image_to_string(image, config=config)
 
 
@@ -905,9 +910,15 @@ def _extract_from_crop(image: "cv2.Mat", debug_info: dict) -> tuple[PanDetails, 
     for img in (gray, thresh_full):
         for psm in ("4", "6"):
             cfg = f"--oem 3 --psm {psm}"
+            try:
+                ocr_data = pytesseract.image_to_data(img, config=cfg, output_type=Output.DICT)
+            except TesseractNotFoundError:
+                raise
+            except Exception:
+                ocr_data = None
             
             for min_conf in (60, 40, 20, 0):
-                text = _ocr_text_by_confidence(img, cfg, min_conf)
+                text = _rebuild_text_from_ocr_data(ocr_data, min_conf) if ocr_data else ""
                     
                 if text.strip():
                     name_cand, father_cand, dob_cand, found_label = _extract_from_lines(text)
