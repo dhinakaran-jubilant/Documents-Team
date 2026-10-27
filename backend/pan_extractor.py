@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -14,6 +15,12 @@ import numpy as np
 import pytesseract
 from pytesseract import Output, TesseractNotFoundError
 from PIL import Image
+
+DEFAULT_TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+if os.path.exists(DEFAULT_TESSERACT_PATH):
+    pytesseract.pytesseract.tesseract_cmd = DEFAULT_TESSERACT_PATH
+elif shutil.which("tesseract"):
+    pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
 
 try:
     import pymupdf as fitz  # PyMuPDF, only needed for PDF input
@@ -66,7 +73,11 @@ class TextWord:
 def _ensure_tesseract(tesseract_cmd: str | None) -> None:
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    elif not shutil.which("tesseract"):
+    elif os.path.exists(DEFAULT_TESSERACT_PATH):
+        pytesseract.pytesseract.tesseract_cmd = DEFAULT_TESSERACT_PATH
+    elif shutil.which("tesseract"):
+        pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
+    else:
         raise RuntimeError("Tesseract was not found.")
 
 def _extract_best_name(raw_text: str, prefer_last: bool = True) -> str:
@@ -234,31 +245,79 @@ def _extract_from_lines(text: str) -> tuple[str, str, str, bool]:
 
 def _fix_pan_loose_chars(candidate: str) -> str:
     chars = list(candidate)
+    if len(chars) != 10:
+        return ""
     
     # Fix letters in the first 5 and last 1 characters
     for i in list(range(5)) + [9]:
         if chars[i] in ("¢", "©"):
             chars[i] = "C"
+        elif chars[i] == "0":
+            chars[i] = "O"
+        elif chars[i] == "1":
+            chars[i] = "I"
+        elif chars[i] == "5":
+            chars[i] = "S"
+        elif chars[i] == "8":
+            chars[i] = "B"
             
-    # The last character MUST be a letter, but OCR sometimes reads 'O' as '0' or 'I' as '1'
-    if chars[9] == "0": chars[9] = "O"
-    if chars[9] == "1": chars[9] = "I"
-
     # Fix digits in the middle 4 characters
     for i in range(5, 9):
-        if chars[i] == "O": chars[i] = "0"
-        elif chars[i] == "I": chars[i] = "1"
-        elif chars[i] == "S": chars[i] = "5"
-        elif chars[i] == "B": chars[i] = "8"
-        
-    return "".join(chars)
+        if chars[i] in ("O", "o", "Q", "D"):
+            chars[i] = "0"
+        elif chars[i] in ("I", "l", "i", "|"):
+            chars[i] = "1"
+        elif chars[i] in ("Z", "z"):
+            chars[i] = "2"
+        elif chars[i] in ("S", "s"):
+            chars[i] = "5"
+        elif chars[i] in ("G", "b"):
+            chars[i] = "6"
+        elif chars[i] in ("B",):
+            chars[i] = "8"
+        elif chars[i] in ("g", "q"):
+            chars[i] = "9"
+            
+    res = "".join(chars).upper()
+    if re.match(r'^[A-Z]{5}\d{4}[A-Z]$', res):
+        return res
+    return ""
 
 def _find_pan(text: str) -> str:
+    if not text:
+        return ""
     upper = text.upper()
+    
+    # 1. Exact match
     match = PAN_RE.search(upper)
-    if match: return re.sub(r"\s+", "", match.group(1))
+    if match:
+        cand = re.sub(r"\s+", "", match.group(1))
+        if len(cand) == 10 and re.match(r'^[A-Z]{5}\d{4}[A-Z]$', cand):
+            return cand
+
+    # 2. Look near keywords: 'Account Number', 'Permanent Account', 'PAN', etc.
+    kw_match = re.search(r'(?:ACCOUNT\s*NUMBER|PERMANENT\s*ACCOUNT|PAN|CARD\s*NO)[\s:\.\-]*([A-Z0-9¢©|]{9,12})', upper)
+    if kw_match:
+        cand = re.sub(r"[^A-Z0-9¢©|]", "", kw_match.group(1))
+        if len(cand) == 10:
+            fixed = _fix_pan_loose_chars(cand)
+            if fixed:
+                return fixed
+
+    # 3. Clean alphanumeric word match
+    clean_words = re.findall(r'[A-Z0-9¢©|]{9,12}', upper)
+    for word in clean_words:
+        cleaned = re.sub(r"[^A-Z0-9¢©|]", "", word)
+        if len(cleaned) == 10:
+            fixed = _fix_pan_loose_chars(cleaned)
+            if fixed:
+                return fixed
+
+    # 4. Loose regex match
     match = PAN_LOOSE_RE.search(upper)
-    if match: return _fix_pan_loose_chars(re.sub(r"\s+", "", match.group(1)))
+    if match:
+        return _fix_pan_loose_chars(re.sub(r"\s+", "", match.group(1)))
+
     return ""
 
 def _deskew(image: "cv2.Mat") -> "cv2.Mat":
@@ -278,7 +337,9 @@ def _deskew(image: "cv2.Mat") -> "cv2.Mat":
             angles.append(angle)
     if not angles: return image
     median_angle = float(np.median(angles))
-    if abs(median_angle) < 0.5: return image
+    # Only deskew for minor tilts. Scans/crops that are already horizontal can produce
+    # spurious angles from character contours (> 10 deg) which would ruin orientation.
+    if abs(median_angle) < 0.5 or abs(median_angle) > 10.0: return image
     h, w = image.shape[:2]
     M = cv2.getRotationMatrix2D((w // 2, h // 2), median_angle, 1.0)
     return cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
@@ -530,7 +591,7 @@ def _get_card_regions(image: "cv2.Mat") -> list[tuple["cv2.Mat", tuple[int, int,
     if not found_boxes:
         return [(image, (0, 0, img_w, img_h))]
 
-    # De-duplicate overlapping boxes (IoU > 0.4 → keep larger)
+    # De-duplicate overlapping boxes (IoU > 0.4 -> keep larger)
     found_boxes.sort(key=lambda b: b[0], reverse=True)
     kept = []
     for b in found_boxes:
@@ -626,9 +687,9 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
     """
     Unified, deterministic PAN-card boundary detection.
     Pipeline:
-      HSV color mask on a 5%-padded ROI → morphological fill → largest
-      connected-component convex hull → minAreaRect → fixed 8% margin
-      (clamped to coarse box boundary) → warpPerspective.
+      HSV color mask on a 5%-padded ROI -> morphological fill -> largest
+      connected-component convex hull -> minAreaRect -> fixed 8% margin
+      (clamped to coarse box boundary) -> warpPerspective.
 
     The ROI is strictly limited to the coarse front-card box + 5% padding
     so that a neighbouring back card is NEVER included.
@@ -670,17 +731,17 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
     best_area  = 0
     for lbl in range(1, n_labels):
         area = stats[lbl, cv2.CC_STAT_AREA]
-        if area < roi_area * 0.05:
+        if area < roi_area * 0.40:
             continue
         if area > best_area:
             best_area  = area
             best_label = lbl
 
     if best_label == -1:
-        debug_info["crop_method"] = "Fallback: no color mask region (ROI)"
+        debug_info["crop_method"] = "Fallback: no dominant card color region (ROI)"
         return original_image[by1:by2, bx1:bx2]
 
-    # ── STEP 3b: CLIP component to the original coarse box ────────────────
+    # -- STEP 3b: CLIP component to the original coarse box ----------------
     # This is the hard guard that prevents ANY back-card pixel from entering
     # the hull, even if the color mask bled slightly beyond the coarse box.
     component_mask = np.uint8(labels == best_label) * 255
@@ -700,7 +761,7 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
 
     hull = cv2.convexHull(component_pts)
 
-    # ── STEP 4: Minimum-area rotated rectangle of the hull ────────────────
+    # -- STEP 4: Minimum-area rotated rectangle of the hull ----------------
     rect = cv2.minAreaRect(hull)
     (rect_cx, rect_cy), (rect_w, rect_h), angle = rect
 
@@ -708,12 +769,12 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
         debug_info["crop_method"] = "Fallback: degenerate minAreaRect"
         return original_image[by1:by2, bx1:bx2]
 
-    # ── STEP 5: Fixed 8% margin expansion ─────────────────────────────────
+    # -- STEP 5: Fixed 8% margin expansion ---------------------------------
     rect_exp = ((rect_cx, rect_cy), (rect_w * 1.08, rect_h * 1.08), angle)
     box_pts  = cv2.boxPoints(rect_exp)
     box_pts  = _order_points(box_pts)
 
-    # Map ROI-local → original image coordinates
+    # Map ROI-local -> original image coordinates
     box_pts[:, 0] += rx1
     box_pts[:, 1] += ry1
 
@@ -721,12 +782,12 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
     box_pts[:, 0] = np.clip(box_pts[:, 0], 0, img_w - 1)
     box_pts[:, 1] = np.clip(box_pts[:, 1], 0, img_h - 1)
 
-    # ── STEP 6: Perspective transform ─────────────────────────────────────
+    # -- STEP 6: Perspective transform -------------------------------------
     (tl, tr, br, bl) = box_pts
     out_w = max(int(np.linalg.norm(br - bl)), int(np.linalg.norm(tr - tl)))
     out_h = max(int(np.linalg.norm(tr - br)), int(np.linalg.norm(tl - bl)))
 
-    if out_w < 20 or out_h < 20:
+    if out_w < 20 or out_h < 20 or out_w < int(bw * 0.5) or out_h < int(bh * 0.5):
         debug_info["crop_method"] = "Fallback: warp dimensions too small"
         return original_image[by1:by2, bx1:bx2]
 
@@ -734,7 +795,7 @@ def _extract_normalized_card(original_image: "cv2.Mat", box: tuple[int, int, int
     M      = cv2.getPerspectiveTransform(box_pts, dst)
     warped = cv2.warpPerspective(original_image, M, (out_w, out_h))
 
-    debug_info["crop_method"] = "Unified ROI+clip: mask→hull→minAreaRect→8%→warp"
+    debug_info["crop_method"] = "Unified ROI+clip: mask->hull->minAreaRect->8%->warp"
     return warped
 
 
@@ -803,6 +864,7 @@ def _confirm_front_side(region: "cv2.Mat") -> dict:
     confirmation_basis = "NOT_CONFIRMED"
     pan_confidence = 0.0
     text_result = ""
+    pan_number = ""
     
     # 1. Strict PAN Check (Primary Confirmation)
     for psm in (6, 11, 3):
@@ -811,15 +873,13 @@ def _confirm_front_side(region: "cv2.Mat") -> dict:
         if not text_result: text_result = text # Save first pass for fallback
         
         # Check raw text
-        upper = text.upper()
-        match = PAN_RE.search(upper)
-        if match:
+        pan = _find_pan(text)
+        if pan:
             is_front_confirmed = True
             confirmation_basis = "PAN_MATCH"
-            # Attempt to find the confidence of the match
-            pan_str = match.group(1).replace(" ", "")
+            pan_number = pan
             for i, w in enumerate(data["text"]):
-                if pan_str in w.upper().replace(" ", ""):
+                if pan in w.upper().replace(" ", ""):
                     try:
                         pan_confidence = float(data["conf"][i])
                     except:
@@ -827,21 +887,8 @@ def _confirm_front_side(region: "cv2.Mat") -> dict:
                     break
             break
             
-        # Try OCR correction on near-misses
-        loose_match = PAN_LOOSE_RE.search(upper)
-        if loose_match:
-            candidate = loose_match.group(1).replace(" ", "")
-            if len(candidate) == 10:
-                corrected = _fix_pan_loose_chars(candidate)
-                match = PAN_RE.search(corrected)
-                if match:
-                    is_front_confirmed = True
-                    confirmation_basis = "PAN_MATCH_CORRECTED"
-                    break
-            
     # 2. Label Check (Secondary Confirmation)
     if not is_front_confirmed:
-        # Just use the psm 6 text
         upper = text_result.upper()
         if re.search(r"\bNAME\b", upper) and re.search(r"\bFATHER[S]?\b", upper):
             is_front_confirmed = True
@@ -855,6 +902,7 @@ def _confirm_front_side(region: "cv2.Mat") -> dict:
         
     return {
         "text": text_result,
+        "pan_number": pan_number,
         "front_score": front_score,
         "is_front_confirmed": is_front_confirmed,
         "confirmation_basis": confirmation_basis,
@@ -1051,6 +1099,59 @@ def extract_pan_details_from_image(path: Path, tesseract_cmd: str | None = None)
         debug_info["tight_crop"] = tight_crop.copy()
         
         details, _ = _extract_from_crop(tight_crop, debug_info)
+
+        # Fallback 1: Check if PAN number was already found during confirmation in Phase 1
+        if not details.pan_number:
+            for d in all_regions_data:
+                pan_cand = d["score_data"].get("pan_number") or _find_pan(d["score_data"].get("text", ""))
+                if pan_cand:
+                    details.pan_number = pan_cand
+                    break
+
+        # Fallback 2: Check full uncropped candidate images across common PSM modes
+        if not details.pan_number:
+            for img in candidate_images:
+                try:
+                    for psm in ("6", "11", "3", "4"):
+                        txt = pytesseract.image_to_string(img, config=f"--oem 3 --psm {psm}")
+                        pan_cand = _find_pan(txt)
+                        if pan_cand:
+                            details.pan_number = pan_cand
+                            break
+                    if details.pan_number:
+                        break
+                except Exception:
+                    pass
+
+        # Fallback 3: For digital PDFs, read embedded text directly
+        if not details.pan_number and path.suffix.lower() == ".pdf" and fitz is not None:
+            try:
+                with fitz.open(str(path)) as doc:
+                    for page in doc:
+                        txt = page.get_text()
+                        pan_cand = _find_pan(txt)
+                        if pan_cand:
+                            details.pan_number = pan_cand
+                            break
+            except Exception:
+                pass
+
+        # Fallback for Name and Father's Name if PDF has clean embedded text
+        if (not details.name or not details.fathers_name) and path.suffix.lower() == ".pdf" and fitz is not None:
+            try:
+                with fitz.open(str(path)) as doc:
+                    for page in doc:
+                        txt = page.get_text()
+                        cand_name, cand_father, cand_dob, _ = _extract_from_lines(txt)
+                        if not details.name and cand_name:
+                            details.name = cand_name
+                        if not details.fathers_name and cand_father:
+                            details.fathers_name = cand_father
+                        if not details.dob and cand_dob:
+                            details.dob = cand_dob
+            except Exception:
+                pass
+
         return details
         
     except TesseractNotFoundError as error:

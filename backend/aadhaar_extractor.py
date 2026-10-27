@@ -1,9 +1,16 @@
+import os
+import shutil
 import cv2
 import numpy as np
 import pytesseract
 import re
 import pymupdf as fitz  # PyMuPDF
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+if os.path.exists(DEFAULT_TESSERACT_PATH):
+    pytesseract.pytesseract.tesseract_cmd = DEFAULT_TESSERACT_PATH
+elif shutil.which("tesseract"):
+    pytesseract.pytesseract.tesseract_cmd = shutil.which("tesseract")
 def preprocess_format_c(image):
     """
     Detects if the image is a scanned photocopy (Format C) where content is only in the top 35%.

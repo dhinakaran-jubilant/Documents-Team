@@ -136,12 +136,12 @@ export default function ForgotPasswordModal({ onClose }) {
             {[1, 2, 3].map((s) => (
               <React.Fragment key={s}>
                 <div className="flex items-center justify-center shrink-0">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-black text-center leading-none transition-all ${step >= s ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-300 text-slate-700'}`}>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-black text-center leading-none transition-all ${step >= s ? 'bg-[#ab7d00] text-white shadow-lg shadow-[#ab7d00]/20' : 'bg-slate-300 text-slate-700'}`}>
                     {s}
                   </div>
                 </div>
                 {s < 3 && (
-                  <div className={`w-12 h-1.5 rounded-full transition-all shrink-0 ${step > s ? 'bg-blue-600' : 'bg-slate-300'}`} />
+                  <div className={`w-12 h-1.5 rounded-full transition-all shrink-0 ${step > s ? 'bg-[#ab7d00]' : 'bg-slate-300'}`} />
                 )}
               </React.Fragment>
             ))}
@@ -158,7 +158,7 @@ export default function ForgotPasswordModal({ onClose }) {
                     value={employeeCode}
                     onChange={(e) => setEmployeeCode(e.target.value)}
                     placeholder="EX: E001"
-                    className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                    className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                     required
                   />
                 </div>
@@ -179,7 +179,7 @@ export default function ForgotPasswordModal({ onClose }) {
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
                       placeholder="Enter your security answer"
-                      className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                      className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                       required
                     />
                     <button
@@ -208,7 +208,7 @@ export default function ForgotPasswordModal({ onClose }) {
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                        className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                         required
                       />
                       <button
@@ -231,7 +231,7 @@ export default function ForgotPasswordModal({ onClose }) {
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                          className="w-full h-14 px-5 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                           required
                         />
                         <button

@@ -26,19 +26,11 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('fin-report');
   
-  // Sync document theme: forces light mode on Login screen, applies dark/light on dashboard
+  // Ensure pure light mode at all times
   useEffect(() => {
-    if (user) {
-      const isDark = localStorage.getItem('isDark') !== 'false';
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [user]);
+    document.documentElement.classList.remove('dark');
+    localStorage.removeItem('isDark');
+  }, []);
 
   // Sync user state with localStorage
   useEffect(() => {
@@ -123,8 +115,8 @@ function App() {
 
   return (
     <Suspense fallback={
-      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+      <div className="flex h-screen w-screen items-center justify-center bg-[#efefef]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#ab7d00] border-t-transparent"></div>
       </div>
     }>
       {renderContent()}

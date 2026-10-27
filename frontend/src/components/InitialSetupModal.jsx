@@ -118,7 +118,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                      className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                       required
                     />
                     <button
@@ -141,7 +141,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                        className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                         required
                       />
                       <button
@@ -166,7 +166,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
                     <button
                       type="button"
                       onClick={() => setShowQuestions(prev => !prev)}
-                      className="w-full h-12 pl-4 pr-12 rounded-2xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all flex items-center justify-between cursor-pointer text-left"
+                      className="w-full h-12 pl-4 pr-12 rounded-2xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all flex items-center justify-between cursor-pointer text-left"
                     >
                       <span className={q1 ? "text-slate-900" : "text-slate-400"}>
                         {q1 || "Select a question"}
@@ -206,7 +206,7 @@ export default function InitialSetupModal({ employeeCode, userRole, onClose }) {
                     value={a1}
                     onChange={(e) => setA1(e.target.value)}
                     placeholder="Recovery answer"
-                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 focus:outline-none transition-all"
+                    className="w-full h-12 px-4 rounded-2xl border border-slate-200 bg-white placeholder:text-slate-400 text-slate-900 text-sm font-medium focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] focus:outline-none transition-all"
                     required
                   />
                 </div>

@@ -41,7 +41,7 @@ from pan_extractor import extract_pan_details_from_image
 from aadhaar_extractor import detect_and_split_aadhaar, extract_aadhaar_fields, process_aadhaar_image
 # Add parent directory to sys.path so we can import extract_
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cheque_extrator import extract_cheque_from_file
+from cheque_extrator import extract_cheque_from_file, get_ifsc_details_from_ifsccodebank
 
 tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 if os.path.exists(tesseract_path):
@@ -532,8 +532,8 @@ def extract_pan_details_from_img(file_path, img):
             "name": name,
             "father_name": father_name,
             "pan_number": details.pan_number,
-            "dob": None,       # New module doesn't extract DOB
-            "address": None,   # New module doesn't extract address
+            "dob": details.dob or None,
+            "address": None,
             "raw_text": ""     # No longer relying on a single raw_text blob
         }
     except Exception as e:
@@ -1092,10 +1092,15 @@ def extract_bank_details_from_ocr(text_or_passes):
         branch_code = account_number[:4]
         ifsc = f"ICIC000{branch_code}"
 
+    if bank_name and bank_name != "Not Found":
+        bank_name = bank_name.upper()
+
     return {
+        "ifsc": ifsc,
         "ifsc_code": ifsc,
         "account_number": account_number,
-        "bank_name": bank_name
+        "bank_name": bank_name,
+        "bankname": bank_name
     }
 
 @app.route('/extract-bank', methods=['POST'])
@@ -1130,6 +1135,18 @@ def handle_extract_bank():
             if os.path.exists(temp_pdf_path):
                 os.remove(temp_pdf_path)
 
+            if details is None:
+                return jsonify({"error": "Could not extract details from document"}), 400
+
+            if isinstance(details, dict):
+                if 'ifsc' not in details and 'ifsc_code' in details:
+                    details['ifsc'] = details['ifsc_code']
+                elif 'ifsc_code' not in details and 'ifsc' in details:
+                    details['ifsc_code'] = details['ifsc']
+                if details.get('bank_name') and details['bank_name'] != 'Not Found':
+                    details['bank_name'] = str(details['bank_name']).strip().upper()
+                details['bankname'] = details.get('bank_name', 'Not Found')
+
             return jsonify({"success": True, "data": details})
 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp')):
@@ -1162,12 +1179,71 @@ def handle_extract_bank():
             if details is None:
                 return jsonify({"error": "Could not extract details from document"}), 400
 
+            if isinstance(details, dict):
+                if 'ifsc' not in details and 'ifsc_code' in details:
+                    details['ifsc'] = details['ifsc_code']
+                elif 'ifsc_code' not in details and 'ifsc' in details:
+                    details['ifsc_code'] = details['ifsc']
+                if details.get('bank_name') and details['bank_name'] != 'Not Found':
+                    details['bank_name'] = str(details['bank_name']).strip().upper()
+                details['bankname'] = details.get('bank_name', 'Not Found')
+
             return jsonify({"success": True, "data": details})
         else:
             return jsonify({"error": "Unsupported file format. Please upload a PDF or an Image."}), 400
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+def enrich_bank_details(data, ifsc_code=None):
+    if not isinstance(data, dict):
+        return data
+
+    address = data.get("ADDRESS", "") or ""
+    branch = data.get("BRANCH", "") or ""
+    district = data.get("DISTRICT", "") or data.get("CITY", "") or ""
+    micr = data.get("MICR", "") or ""
+
+    pin_match = re.search(r'\b\d{6}\b', address)
+    if pin_match:
+        data["PINCODE"] = pin_match.group(0)
+        return data
+
+    ignore_words = {'STREET', 'FLOOR', 'TOWER', 'TOWERS', 'BUILDING', 'COMPLEX', 'ROAD', 'NAGAR', 'PHASE', 'BLOCK', 'SECTOR', 'CROSS', 'MAIN', 'AVENUE', 'PLAZA', 'HOUSE'}
+    clean_addr = re.sub(r'[^A-Za-z\s]', ' ', address)
+    tokens = [w.upper() for w in clean_addr.split() if len(w) >= 5 and w.upper() not in ignore_words]
+    for m in re.finditer(r'(?:STREET|ROAD|NAGAR|BLOCK)([A-Za-z]{4,})', address, re.I):
+        tokens.append(m.group(1).upper())
+
+    found_pin = None
+    found_locality = None
+    micr_prefix = micr[:3] if len(micr) >= 3 else ""
+
+    for word in tokens:
+        try:
+            r = requests.get(f"https://api.postalpincode.in/postoffice/{word}", headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+            if r.status_code == 200:
+                res_list = r.json()
+                if res_list and isinstance(res_list, list) and res_list[0].get("PostOffice"):
+                    for po in res_list[0]["PostOffice"]:
+                        po_dist = po.get("District", "").upper()
+                        po_pin = po.get("Pincode", "")
+                        if (district and (district.upper() in po_dist or po_dist in district.upper())) or (micr_prefix and po_pin.startswith(micr_prefix)):
+                            found_pin = po_pin
+                            found_locality = word
+                            break
+            if found_pin:
+                break
+        except Exception:
+            pass
+
+    if found_pin:
+        data["PINCODE"] = found_pin
+        data["ADDRESS"] = f"{address} - {found_pin}"
+        if found_locality and found_locality.upper() not in branch.upper():
+            data["BRANCH"] = found_locality.upper()
+
+    return data
 
 @app.route('/api/ifsc/<ifsc_code>', methods=['GET'])
 def proxy_ifsc(ifsc_code):
@@ -1176,11 +1252,25 @@ def proxy_ifsc(ifsc_code):
         return jsonify({"error": "Invalid IFSC code format"}), 400
         
     try:
+        # Priority 1: Fetch accurate branch and pincode using ifsccodebank.com
+        data = get_ifsc_details_from_ifsccodebank(ifsc_code)
+        if data and data.get("BRANCH") and data.get("PINCODE"):
+            return jsonify(data)
+
+        # Fallback: Razorpay API
         url = f"https://ifsc.razorpay.com/{ifsc_code}"
-        # Server-side requests bypass CORS blocks
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
-            return jsonify(response.json())
+            razor_data = response.json()
+            if isinstance(razor_data, dict):
+                if "BANK" in razor_data and razor_data["BANK"]:
+                    razor_data["BANK"] = str(razor_data["BANK"]).upper()
+                razor_data = enrich_bank_details(razor_data, ifsc_code)
+                if "BRANCH" in razor_data and razor_data["BRANCH"]:
+                    razor_data["BRANCH"] = str(razor_data["BRANCH"]).upper()
+            return jsonify(razor_data)
+        elif data:
+            return jsonify(data)
         elif response.status_code == 404:
             return jsonify({"error": "IFSC code not found"}), 404
         else:

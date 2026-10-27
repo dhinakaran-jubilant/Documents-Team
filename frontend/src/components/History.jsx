@@ -171,13 +171,13 @@ function History({ user, onLogout, onTabChange }) {
 
     return (
         <Layout user={user} onLogout={onLogout} onTabChange={onTabChange} activeTab="history">
-            <main className="flex-1 flex flex-col bg-slate-50 dark:bg-[#101822] px-10 pt-10 pb-8 transition-colors duration-300 h-full overflow-hidden relative">
+            <div className="flex-1 flex flex-col bg-[#efefef] px-10 pt-3 pb-8 h-full overflow-hidden relative">
                 {/* Custom Toast Alert */}
                 {notification && (
                     <div className={`fixed top-6 right-6 z-[200] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-xl border animate-in slide-in-from-top-4 duration-300 ${
                         notification.type === 'error'
-                            ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
-                            : 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+                            ? 'bg-red-50 border-red-200 text-red-800'
+                            : 'bg-green-50 border-green-200 text-green-800'
                     }`}>
                         <span className="material-symbols-outlined text-lg">
                             {notification.type === 'error' ? 'error' : 'check_circle'}
@@ -190,7 +190,7 @@ function History({ user, onLogout, onTabChange }) {
                     {/* Header Section */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 shrink-0">
                         <div className="flex flex-col items-start text-left gap-2 max-w-3xl">
-                            <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">History</h1>
+                            <h1 className="text-4xl font-black tracking-tight text-slate-900">History</h1>
                         </div>
                         {hasDocumatAccess && (
                             <div className="relative w-full md:w-80 self-start md:self-center">
@@ -202,7 +202,7 @@ function History({ user, onLogout, onTabChange }) {
                                     placeholder="Search by proprietor, lender..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-12 pr-6 py-3 rounded-2xl bg-slate-100/70 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-[#101726] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-[13px] font-semibold"
+                                    className="w-full pl-12 pr-6 py-3 rounded-2xl bg-slate-100/70 focus:bg-white border border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#ab7d00]/20 focus:border-[#ab7d00] transition-all text-[13px] font-semibold"
                                 />
                             </div>
                         )}
@@ -368,8 +368,8 @@ function History({ user, onLogout, onTabChange }) {
                                                             onClick={() => setCurrentPage(p)}
                                                             className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
                                                                 currentPage === p
-                                                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                                                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                                    ? 'bg-[#ab7d00] text-white shadow-md shadow-[#ab7d00]/20'
+                                                                    : 'text-slate-600 hover:text-slate-950 hover:bg-slate-100'
                                                             }`}
                                                         >
                                                             {p}
@@ -413,7 +413,7 @@ function History({ user, onLogout, onTabChange }) {
                                 {/* Modal Header */}
                                 <div className="flex items-center justify-between px-8 py-6 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/10 shrink-0">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-2xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                        <div className="w-12 h-12 rounded-2xl bg-[#ab7d00]/10 text-[#ab7d00] flex items-center justify-center">
                                             <span className="material-symbols-outlined text-2xl">description</span>
                                         </div>
                                         <div className="text-left">
@@ -648,7 +648,7 @@ function History({ user, onLogout, onTabChange }) {
                         </div>
                     </div>
                 )}
-            </main>
+            </div>
         </Layout>
     );
 }

@@ -1,22 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
 @import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
-
 :root {
-  --bg-gradient: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --text-main: #f0f4f8;
-  --text-muted: #9ba4b5;
-  --accent-color: #38bdf8;
-  --accent-hover: #0ea5e9;
+  --bg-color: #efefef;
+  --theme-primary: #ab7d00;
+  --theme-primary-hover: #8f6800;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --accent-color: #ab7d00;
+  --accent-hover: #8f6800;
   --success-color: #10b981;
   --error-color: #ef4444;
 }
 
-
 body {
   font-family: 'Inter', sans-serif;
+  background-color: #efefef;
   color: var(--text-main);
   margin: 0;
 }

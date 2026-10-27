@@ -175,16 +175,16 @@ function Users({ user, onLogout, onTabChange }) {
 
     return (
         <Layout user={user} onLogout={onLogout} onTabChange={onTabChange} activeTab="users">
-            <main className="flex-1 flex flex-col bg-slate-50 dark:bg-[#101822] px-10 pt-10 pb-8 transition-colors duration-300 h-full overflow-hidden">
+            <div className="flex-1 flex flex-col bg-[#efefef] px-10 pt-3 pb-8 h-full overflow-hidden">
                 <div className="flex-1 flex flex-col min-h-0">
                     {/* Header Section */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 shrink-0">
                         <div className="flex flex-col items-start text-left gap-2 max-w-3xl">
-                            <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">Users</h1>
+                            <h1 className="text-4xl font-black tracking-tight text-slate-900">Users</h1>
                         </div>
                         <button
                             onClick={() => setShowAddModal(true)}
-                            className="flex items-center justify-center gap-3 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 active:scale-95 shrink-0 self-start md:self-center"
+                            className="flex items-center justify-center gap-3 px-6 py-3 bg-[#ab7d00] hover:bg-[#8f6800] text-white rounded-2xl font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-[#ab7d00]/20 active:scale-95 shrink-0 self-start md:self-center"
                         >
                             <span className="material-symbols-outlined text-lg">person_add</span>
                             Add User
@@ -283,7 +283,7 @@ function Users({ user, onLogout, onTabChange }) {
                                                                     <span className="text-[15px] font-bold text-slate-950 dark:text-white flex items-center gap-2 truncate capitalize">
                                                                         {u.name}
                                                                         {isSelf && (
-                                                                            <span className="px-2 py-0.5 bg-blue-600/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-full shrink-0">
+                                                                            <span className="px-2 py-0.5 bg-[#ab7d00]/10 text-[#ab7d00] text-[10px] font-black uppercase tracking-widest rounded-full shrink-0">
                                                                                 You
                                                                             </span>
                                                                         )}
@@ -305,7 +305,7 @@ function Users({ user, onLogout, onTabChange }) {
                                                         <td className="py-5 px-6">
                                                             <div className="flex flex-wrap gap-1">
                                                                 {(!u.accessed_menus || u.accessed_menus.includes('fin-report')) && (
-                                                                    <span className="px-2 py-0.5 bg-blue-600/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-md border border-blue-600/20">
+                                                                    <span className="px-2 py-0.5 bg-[#ab7d00]/10 text-[#ab7d00] text-[10px] font-black uppercase tracking-widest rounded-md border border-[#ab7d00]/20">
                                                                         Fin Report
                                                                     </span>
                                                                 )}
@@ -395,8 +395,8 @@ function Users({ user, onLogout, onTabChange }) {
                                                     onClick={() => setCurrentPage(p)}
                                                     className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
                                                         currentPage === p
-                                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                                                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                            ? 'bg-[#ab7d00] text-white shadow-md shadow-[#ab7d00]/20'
+                                                            : 'text-slate-600 hover:text-slate-950 hover:bg-slate-100'
                                                     }`}
                                                 >
                                                     {p}
@@ -419,7 +419,7 @@ function Users({ user, onLogout, onTabChange }) {
                         )}
                     </div>
                 </div>
-            </main>
+            </div>
 
             {/* Add User Modal */}
             {showAddModal && (
@@ -545,7 +545,7 @@ function Users({ user, onLogout, onTabChange }) {
                             <button
                                 type="submit"
                                 disabled={adding}
-                                className="flex-1 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 flex items-center justify-center gap-2"
+                                className="flex-1 px-6 py-4 rounded-xl bg-[#ab7d00] hover:bg-[#8f6800] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-[#ab7d00]/20 flex items-center justify-center gap-2"
                             >
                                 {adding ? (
                                     <>
@@ -685,7 +685,7 @@ function Users({ user, onLogout, onTabChange }) {
                             <button
                                 type="submit"
                                 disabled={editing}
-                                className="flex-1 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-blue-600/20 flex items-center justify-center gap-2"
+                                className="flex-1 px-6 py-4 rounded-xl bg-[#ab7d00] hover:bg-[#8f6800] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold uppercase tracking-widest text-[11px] transition-all cursor-pointer shadow-xl shadow-[#ab7d00]/20 flex items-center justify-center gap-2"
                             >
                                 {editing ? (
                                     <>

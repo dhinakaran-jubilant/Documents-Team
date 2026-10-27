@@ -166,12 +166,13 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                     if (response.ok) {
                         const data = await response.json();
                         const pincodeMatch = data.ADDRESS ? data.ADDRESS.match(/\d{6}/) : null;
+                        const pincodeVal = data.PINCODE || (pincodeMatch ? pincodeMatch[0] : '');
 
                         setFormData(prev => ({
                             ...prev,
-                            bankName: data.BANK || prev.bankName,
-                            branch: data.BRANCH || prev.branch,
-                            pincode: (pincodeMatch ? pincodeMatch[0] : prev.pincode)
+                            bankName: (data.BANK ? data.BANK.toUpperCase() : prev.bankName),
+                            branch: (data.BRANCH ? data.BRANCH.toUpperCase() : prev.branch),
+                            pincode: pincodeVal || prev.pincode
                         }));
                     }
                 } catch (error) {
@@ -194,11 +195,11 @@ const Documat = ({ user, onLogout, onTabChange }) => {
     };
 
     const colorClasses = {
-        blue: { bg: 'bg-blue-600', text: 'text-blue-500', hoverBg: 'group-hover:bg-blue-300/20', hoverBorder: 'hover:border-blue-300', darkHoverBg: 'dark:group-hover:bg-blue-900/30', darkHoverBorder: 'dark:hover:border-blue-500/50', shadow: 'shadow-blue-600/30', border: 'border-blue-600', activeBg: 'bg-blue-600/5' },
-        emerald: { bg: 'bg-emerald-600', text: 'text-emerald-500', hoverBg: 'group-hover:bg-emerald-300/20', hoverBorder: 'hover:border-emerald-300', darkHoverBg: 'dark:group-hover:bg-emerald-900/30', darkHoverBorder: 'dark:hover:border-emerald-500/50', shadow: 'shadow-emerald-600/30', border: 'border-emerald-600', activeBg: 'bg-emerald-600/5' },
-        rose: { bg: 'bg-rose-600', text: 'text-rose-500', hoverBg: 'group-hover:bg-rose-300/20', hoverBorder: 'hover:border-rose-300', darkHoverBg: 'dark:group-hover:bg-rose-900/30', darkHoverBorder: 'dark:hover:border-rose-500/50', shadow: 'shadow-rose-600/30', border: 'border-rose-600', activeBg: 'bg-rose-600/5' },
-        amber: { bg: 'bg-amber-600', text: 'text-amber-500', hoverBg: 'group-hover:bg-amber-300/20', hoverBorder: 'hover:border-amber-300', darkHoverBg: 'dark:group-hover:bg-amber-900/30', darkHoverBorder: 'dark:hover:border-amber-500/50', shadow: 'shadow-amber-600/30', border: 'border-amber-600', activeBg: 'bg-amber-600/5' },
-        indigo: { bg: 'bg-indigo-600', text: 'text-indigo-500', hoverBg: 'group-hover:bg-indigo-300/20', hoverBorder: 'hover:border-indigo-300', darkHoverBg: 'dark:group-hover:bg-indigo-900/30', darkHoverBorder: 'dark:hover:border-indigo-500/50', shadow: 'shadow-indigo-600/30', border: 'border-indigo-600', activeBg: 'bg-indigo-600/5' }
+        blue: { bg: 'bg-[#ab7d00]', text: 'text-[#ab7d00]', hoverBg: 'group-hover:bg-[#ab7d00]/10', hoverBorder: 'hover:border-[#ab7d00]/40', shadow: 'shadow-[#ab7d00]/30', border: 'border-[#ab7d00]', activeBg: 'bg-[#ab7d00]/5' },
+        emerald: { bg: 'bg-emerald-600', text: 'text-emerald-500', hoverBg: 'group-hover:bg-emerald-300/20', hoverBorder: 'hover:border-emerald-300', shadow: 'shadow-emerald-600/30', border: 'border-emerald-600', activeBg: 'bg-emerald-600/5' },
+        rose: { bg: 'bg-rose-600', text: 'text-rose-500', hoverBg: 'group-hover:bg-rose-300/20', hoverBorder: 'hover:border-rose-300', shadow: 'shadow-rose-600/30', border: 'border-rose-600', activeBg: 'bg-rose-600/5' },
+        amber: { bg: 'bg-amber-600', text: 'text-amber-500', hoverBg: 'group-hover:bg-amber-300/20', hoverBorder: 'hover:border-amber-300', shadow: 'shadow-amber-600/30', border: 'border-amber-600', activeBg: 'bg-amber-600/5' },
+        indigo: { bg: 'bg-indigo-600', text: 'text-indigo-500', hoverBg: 'group-hover:bg-indigo-300/20', hoverBorder: 'hover:border-indigo-300', shadow: 'shadow-indigo-600/30', border: 'border-indigo-600', activeBg: 'bg-indigo-600/5' }
     };
 
     const handleSelect = (option) => {
@@ -758,12 +759,19 @@ const Documat = ({ user, onLogout, onTabChange }) => {
             const result = await response.json();
 
             if (result.success && result.data) {
-                const { ifsc, account_number, bank_name } = result.data;
+                const ifscVal = result.data.ifsc || result.data.ifsc_code || '';
+                const acctVal = result.data.account_number || result.data.accountNumber || '';
+                const bankVal = result.data.bank_name || result.data.bankName || '';
+                const branchVal = result.data.branch || result.data.BRANCH || '';
+                const pincodeVal = result.data.pincode || result.data.PINCODE || '';
+
                 setFormData(prev => ({
                     ...prev,
-                    ifsc: ifsc ? ifsc.toUpperCase() : prev.ifsc,
-                    accountNumber: account_number ? account_number : prev.accountNumber,
-                    bankName: bank_name ? bank_name : prev.bankName,
+                    ifsc: (ifscVal && ifscVal !== 'IFSC: NOT FOUND') ? ifscVal.toUpperCase() : prev.ifsc,
+                    accountNumber: (acctVal && acctVal !== 'ACCOUNT: NOT FOUND') ? acctVal : prev.accountNumber,
+                    bankName: (bankVal && bankVal !== 'Not Found') ? bankVal : prev.bankName,
+                    branch: (branchVal ? branchVal.toUpperCase() : prev.branch),
+                    pincode: pincodeVal || prev.pincode,
                 }));
             } else {
                 console.error(result.error);
@@ -778,22 +786,32 @@ const Documat = ({ user, onLogout, onTabChange }) => {
     };
 
     return (
-        <Layout user={user} onLogout={onLogout} onTabChange={onTabChange} onTabClick={(tab) => tab === 'documat' && handleBackToSelection()} activeTab="documat">
-            <main className="flex-1 bg-slate-50 dark:bg-[#101822] px-10 pt-10 pb-6 transition-colors duration-300">
+        <Layout 
+            user={user} 
+            onLogout={onLogout} 
+            onTabChange={onTabChange} 
+            onTabClick={(tab) => tab === 'documat' && handleBackToSelection()} 
+            activeTab="documat"
+            breadcrumbs={step === 2 ? [
+                { label: 'Home', icon: 'home', onClick: () => { onTabChange && onTabChange('fin-report'); } },
+                { label: 'Documat', onClick: handleBackToSelection },
+                { label: selectedType }
+            ] : null}
+        >
+            <div className="flex-1 bg-[#efefef] px-10 pt-3 pb-6">
                 <div className="flex flex-col min-h-full">
                     {/* Header Section */}
                     <div className="flex flex-col items-start text-left gap-2 mb-10">
                         {step === 1 && (
                             <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Documat</h1>
+                                <h1 className="text-3xl font-black text-slate-900 tracking-tight">Documat</h1>
                                 <p className="text-sm font-medium text-slate-500 max-w-2xl mt-2">Select an entity type to initiate onboarding and securely extract data from business documents.</p>
                             </div>
                         )}
                         {step === 2 && (
-                            <div className="flex items-center gap-2 text-blue-500 font-bold text-[11px] uppercase tracking-widest mb-1">
-                                <span className="hover:text-blue-400 cursor-pointer transition-colors" onClick={handleBackToSelection}>Documat</span>
-                                <span className="material-symbols-outlined text-sm opacity-50 text-slate-500">chevron_right</span>
-                                <span className="text-slate-400">{selectedType}</span>
+                            <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                                <h1 className="text-3xl font-black text-slate-900 tracking-tight">{selectedType}</h1>
+                                <p className="text-sm font-medium text-slate-500 max-w-2xl mt-2">Upload and extract KYC and business documents for {selectedType}.</p>
                             </div>
                         )}
                     </div>
@@ -986,7 +1004,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                         setLoans([...loans, { lenderName: '', loanAmount: '', repayment: '' }]);
                                                         setOpenDropdownIdx(null);
                                                     }}
-                                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-blue-600 shadow-md shadow-blue-600/20 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
+                                                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-[#ab7d00] shadow-md shadow-[#ab7d00]/20 hover:bg-[#8f6800] hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer"
                                                 >
                                                     <span className="material-symbols-outlined text-sm">add</span>
                                                     Add New
@@ -1244,7 +1262,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Bank Name <span className="text-red-500">*</span></label>
-                                                    <input type="text" placeholder="Enter bank name" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+                                                    <input type="text" placeholder="Enter bank name" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value.toUpperCase() })} className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-[#0f172b] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase" />
                                                 </div>
                                                 <div className="space-y-2">
                                                     <label className="block text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1">Branch <span className="text-red-500">*</span></label>
@@ -1269,7 +1287,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => setJoinees([...joinees, { name: '', title: 'Mr.', father: '', pan: '', address: '' }])}
-                                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-blue-600 shadow-md shadow-blue-600/20 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer`}
+                                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white bg-[#ab7d00] shadow-md shadow-[#ab7d00]/20 hover:bg-[#8f6800] hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer`}
                                                 >
                                                     <span className="material-symbols-outlined text-sm">add</span>
                                                     Add {selectedType === 'Partnership' ? 'Partner' : 'Guarantor'}
@@ -1439,7 +1457,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                         </p>
                     </footer>
                 </div>
-            </main>
+            </div>
 
             {/* Custom Crop Modal */}
             {isCropModalOpen && (
@@ -1526,7 +1544,7 @@ const Documat = ({ user, onLogout, onTabChange }) => {
                             <button
                                 type="button"
                                 onClick={handleProcessCrop}
-                                className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold uppercase tracking-wider text-[10px] hover:bg-blue-700 hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer shadow-lg shadow-blue-500/30"
+                                className="px-6 py-3 rounded-xl bg-[#ab7d00] text-white font-bold uppercase tracking-wider text-[10px] hover:bg-[#8f6800] hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer shadow-lg shadow-[#ab7d00]/20"
                             >
                                 Crop & Process
                             </button>

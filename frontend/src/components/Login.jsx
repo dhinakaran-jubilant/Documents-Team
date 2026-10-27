@@ -76,9 +76,9 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-6 bg-slate-50 font-[Inter] antialiased">
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-6 bg-[#efefef] font-[Inter] antialiased">
       {/* Centered Login Card */}
-      <div className="w-full max-w-[440px] bg-white rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 overflow-hidden">
+      <div className="w-full max-w-[440px] bg-white rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200 overflow-hidden">
         <div className="p-8 sm:p-12">
           {/* Header */}
           <div className="mb-10 text-center">
@@ -93,7 +93,7 @@ export default function Login({ onLogin }) {
             <div className="flex flex-col gap-2">
               <label className="text-slate-900 text-[13px] font-semibold ml-1">Employee Code</label>
               <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#ab7d00] transition-colors">
                   <span className="material-symbols-outlined text-[20px]">badge</span>
                 </div>
                 <input
@@ -102,7 +102,7 @@ export default function Login({ onLogin }) {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your employee code"
                   required
-                  className="flex w-full rounded-xl text-slate-900 border border-slate-200 bg-white h-12 pl-12 pr-4 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 transition-all text-sm font-medium"
+                  className="flex w-full rounded-xl text-slate-900 border border-slate-200 bg-white h-12 pl-12 pr-4 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] transition-all text-sm font-medium"
                 />
               </div>
             </div>
@@ -114,13 +114,13 @@ export default function Login({ onLogin }) {
                 <button 
                   type="button"
                   onClick={() => setShowForgot(true)}
-                  className="text-blue-600 text-[11px] font-bold hover:text-blue-700 transition-colors cursor-pointer"
+                  className="text-[#ab7d00] text-[11px] font-bold hover:text-[#8f6800] transition-colors cursor-pointer"
                 >
                   Forgot Password?
                 </button>
               </div>
               <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#ab7d00] transition-colors">
                   <span className="material-symbols-outlined text-[20px]">lock</span>
                 </div>
                 <input
@@ -129,7 +129,7 @@ export default function Login({ onLogin }) {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="flex w-full rounded-xl text-slate-900 border border-slate-200 bg-white h-12 pl-12 pr-12 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-600/5 focus:border-blue-600 transition-all text-sm font-medium"
+                  className="flex w-full rounded-xl text-slate-900 border border-slate-200 bg-white h-12 pl-12 pr-12 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-[#ab7d00]/10 focus:border-[#ab7d00] transition-all text-sm font-medium"
                 />
                 <button
                   type="button"
@@ -150,7 +150,7 @@ export default function Login({ onLogin }) {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600/20 transition-all cursor-pointer shadow-sm"
+                className="w-4 h-4 rounded border-slate-300 text-[#ab7d00] focus:ring-[#ab7d00]/20 transition-all cursor-pointer shadow-sm"
               />
               <label htmlFor="remember" className="text-slate-600 text-[13px] font-medium cursor-pointer select-none">
                 Remember this device
@@ -161,7 +161,7 @@ export default function Login({ onLogin }) {
             <button
               type="submit"
               disabled={loading}
-              className={`w-full bg-blue-600 text-white font-bold h-12 rounded-xl transition-all shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 mt-4 active:scale-[0.98] cursor-pointer ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'}`}
+              className={`w-full bg-[#ab7d00] hover:bg-[#8f6800] text-white font-bold h-12 rounded-xl transition-all shadow-lg shadow-[#ab7d00]/20 flex items-center justify-center gap-2 mt-4 active:scale-[0.98] cursor-pointer ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
